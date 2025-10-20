@@ -1,14 +1,15 @@
 # monitor.py
 import ccxt
+import pandas as pd
 import numpy as np
 import time
 import logging
 from datetime import datetime
 
-# Logging setup (без временных меток в выводе)
+# Logging setup (clean text only)
 logging.basicConfig(
     level=logging.INFO,
-    format="%(message)s",
+    format="%(message)s",  # Только текст
     handlers=[
         logging.FileHandler("okx_basket_monitor.log"),
         logging.StreamHandler()
@@ -20,60 +21,71 @@ class OKXBasketMonitor:
     def __init__(self):
         self.exchange = ccxt.okx({
             "enableRateLimit": True,
-            "options": {"defaultType": "spot"},  # используем spot (USDT)
+            "options": {"defaultType": "swap"},
             "sandbox": False
         })
         self.target = "BTC/USDT:USDT"
-        self.basket_symbols = ["ETH/USDT:USDT", "BNB/USDT:USDT", "SOL/USDT:USDT", "XRP/USDT:USDT"]
+        self.basket_symbols = [
+            "ETH/USDT:USDT",
+            "BNB/USDT:USDT",
+            "SOL/USDT:USDT",
+            "XRP/USDT:USDT"
+        ]
         self.basket_weights = []
         self.historical_data = {}
-        self.lookback_days = 20  # меньше дней, чтобы экономить память
+        self.lookback_days = 30
 
     def fetch_historical_data(self):
         logger.info("Fetching historical data from OKX...")
-        symbols = [self.target] + self.basket_symbols
-        for symbol in symbols:
+        for symbol in [self.target] + self.basket_symbols:
             try:
                 since = self.exchange.parse8601(
-                    (datetime.utcnow() - np.timedelta64(self.lookback_days, 'D')).astype(str)
+                    (datetime.utcnow() - pd.Timedelta(days=self.lookback_days)).isoformat()
                 )
-                ohlcv = self.exchange.fetch_ohlcv(symbol, "1d", since=since, limit=self.lookback_days)
-                if ohlcv:
-                    # Храним только close
-                    self.historical_data[symbol] = np.array([c[4] for c in ohlcv], dtype=np.float32)
-                    logger.info(f"Loaded {len(self.historical_data[symbol])} days for {symbol}")
-                else:
+                ohlcv = self.exchange.fetch_ohlcv(symbol, "1d", since=since, limit=30)
+                if not ohlcv:
                     logger.warning(f"No data for {symbol}")
+                    continue
+                closes = [c[4] for c in ohlcv]
+                self.historical_data[symbol] = closes
+                logger.info(f"Loaded {len(closes)} days for {symbol}")
             except Exception as e:
-                logger.error(f"Error loading data for {symbol}: {e}")
+                logger.warning(f"Error loading {symbol}: {e}")
 
-        # Проверяем минимальное количество валидных символов
-        valid = [s for s in symbols if s in self.historical_data and len(self.historical_data[s]) >= 10]
+        valid = [s for s in [self.target] + self.basket_symbols
+                 if s in self.historical_data and len(self.historical_data[s]) >= 10]
         if len(valid) < 3:
             logger.error("Not enough valid symbols for analysis.")
             return False
         return True
 
     def calculate_basket_weights(self):
-        correlations = []
-        valid_symbols = []
-        for s in self.basket_symbols:
-            if s in self.historical_data and self.target in self.historical_data:
-                if len(self.historical_data[s]) == len(self.historical_data[self.target]):
-                    corr = np.corrcoef(self.historical_data[self.target], self.historical_data[s])[0, 1]
+        correlations, valid = [], []
+        for symbol in self.basket_symbols:
+            if symbol in self.historical_data and self.target in self.historical_data:
+                x = self.historical_data[self.target]
+                y = self.historical_data[symbol]
+                if len(x) == len(y):
+                    corr = np.corrcoef(x, y)[0, 1]
                     if not np.isnan(corr):
                         correlations.append(corr)
-                        valid_symbols.append(s)
-                        logger.info(f"Correlation BTC/{s}: {corr:.3f}")
-        self.basket_symbols = valid_symbols
-        if correlations:
-            abs_corr = np.abs(correlations)
-            self.basket_weights = abs_corr / abs_corr.sum()
-        else:
-            self.basket_weights = np.ones(len(self.basket_symbols)) / len(self.basket_symbols)
+                        valid.append(symbol)
+                        logger.info(f"Correlation BTC/{symbol}: {corr:.4f}")
+
+        self.basket_symbols = valid
+        if not correlations:
+            if not self.basket_symbols:
+                logger.error("No valid symbols for basket weights.")
+                return
             logger.warning("No valid correlations, using equal weights.")
-        for s, w in zip(self.basket_symbols, self.basket_weights):
-            logger.info(f"{s}: weight={w:.3f}")
+            self.basket_weights = np.ones(len(self.basket_symbols)) / len(self.basket_symbols)
+            return
+
+        abs_corr = np.abs(correlations)
+        self.basket_weights = abs_corr / np.sum(abs_corr)
+        logger.info("Calculated basket weights:")
+        for s, w, c in zip(self.basket_symbols, self.basket_weights, correlations):
+            logger.info(f"  {s}: {w:.3f} (corr={c:.3f})")
 
     def get_current_prices(self):
         prices = {}
@@ -88,42 +100,59 @@ class OKXBasketMonitor:
                 return None
             return prices
         except Exception as e:
-            logger.error(f"Error fetching prices: {e}")
+            logger.warning(f"Error fetching tickers: {e}")
             return None
 
     def calculate_basket_price(self, prices):
-        return sum(self.basket_weights[i] * prices[s] for i, s in enumerate(self.basket_symbols) if s in prices)
+        return sum(self.basket_weights[i] * prices[s]
+                   for i, s in enumerate(self.basket_symbols)
+                   if s in prices)
+
+    def calculate_spread_series(self):
+        min_len = min(len(self.historical_data[s])
+                      for s in [self.target] + self.basket_symbols
+                      if s in self.historical_data)
+        if min_len < 10:
+            logger.warning("Insufficient historical data.")
+            return None
+        target = np.array(self.historical_data[self.target][-min_len:])
+        basket = np.zeros(min_len)
+        for i, s in enumerate(self.basket_symbols):
+            basket += self.basket_weights[i] * np.array(self.historical_data[s][-min_len:])
+        return target / basket
 
     def calculate_zscore(self, current_prices):
         if not all(s in current_prices for s in [self.target] + self.basket_symbols):
             return None, None, None
-        basket = self.calculate_basket_price(current_prices)
-        spread_now = current_prices[self.target] / basket
-        min_len = min(len(self.historical_data[s]) for s in [self.target] + self.basket_symbols)
-        target_hist = self.historical_data[self.target][-min_len:]
-        basket_hist = np.zeros(min_len, dtype=np.float32)
-        for i, s in enumerate(self.basket_symbols):
-            basket_hist += self.basket_weights[i] * self.historical_data[s][-min_len:]
-        spread_hist = target_hist / basket_hist
-        mean, std = spread_hist.mean(), spread_hist.std()
+        spread_now = current_prices[self.target] / self.calculate_basket_price(current_prices)
+        spread_hist = self.calculate_spread_series()
+        if spread_hist is None:
+            return None, None, None
+        mean, std = np.mean(spread_hist), np.std(spread_hist)
         if std < 1e-10:
             return None, None, None
         z = (spread_now - mean) / std
         return z, spread_now, (mean, std)
 
     def trading_signal(self, z):
-        if z is None: return "NO DATA"
-        if z > 2.0: return "SHORT BTC / LONG BASKET"
-        if z < -2.0: return "LONG BTC / SHORT BASKET"
-        if abs(z) < 0.5: return "EXIT POSITION"
+        if z is None:
+            return "NO DATA"
+        if z > 2.0:
+            return "SHORT BTC / LONG BASKET"
+        elif z < -2.0:
+            return "LONG BTC / SHORT BASKET"
+        elif abs(z) < 0.5:
+            return "EXIT POSITION"
         return "HOLD"
 
     def run(self, interval_minutes=5):
-        logger.info("Starting basket monitor...")
+        logger.info("Starting OKX basket monitor...")
         if not self.fetch_historical_data():
+            logger.error("Failed to fetch historical data.")
             return
         self.calculate_basket_weights()
         if not self.basket_symbols:
+            logger.error("No valid symbols for monitoring.")
             return
         logger.info(f"Monitoring symbols: {self.basket_symbols}")
 
@@ -133,25 +162,31 @@ class OKXBasketMonitor:
                 if not prices:
                     time.sleep(60)
                     continue
+
                 z, spread, stats = self.calculate_zscore(prices)
                 if z is not None:
                     mean, std = stats
                     signal = self.trading_signal(z)
                     report = f"""
-BTC: {prices[self.target]:.2f}
-Basket: {self.calculate_basket_price(prices):.2f}
+=== OKX FUTURES BASKET MONITOR ===
+Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC
+BTC-USDT: {prices[self.target]:.2f}
+Basket Price: {self.calculate_basket_price(prices):.2f}
 Spread: {spread:.6f}
-Mean ± Std: {mean:.6f} ± {std:.6f}
+Mean: {mean:.6f} ± {std:.6f}
 Z-Score: {z:.4f}
 Signal: {signal}
+Status: {"NORMAL" if abs(z) < 0.5 else "WATCH" if abs(z) < 2 else "SIGNAL"}
 """
                     print(report)
+                else:
+                    logger.warning("Z-score unavailable.")
                 time.sleep(interval_minutes * 60)
             except KeyboardInterrupt:
-                logger.info("Stopped by user.")
+                logger.info("Monitoring stopped by user.")
                 break
             except Exception as e:
-                logger.error(f"Error: {e}")
+                logger.warning(f"Error in loop: {e}")
                 time.sleep(60)
 
 def main():

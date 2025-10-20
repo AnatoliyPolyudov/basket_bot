@@ -1,0 +1,8 @@
+Starting basket monitor...
+Fetching historical data from OKX...
+Error loading data for BTC/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for ETH/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for BNB/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for SOL/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for XRP/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Not enough valid symbols for analysis.

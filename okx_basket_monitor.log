@@ -1,0 +1,303 @@
+2025-10-20 21:13:21,660 - INFO - Starting OKX basket monitor...
+2025-10-20 21:13:21,661 - INFO - Fetching historical data from OKX...
+2025-10-20 21:13:24,482 - INFO - Loaded 30 days for BTC-USDT-SWAP
+2025-10-20 21:13:24,792 - INFO - Loaded 30 days for ETH-USDT-SWAP
+2025-10-20 21:13:25,105 - INFO - Loaded 30 days for BNB-USDT-SWAP
+2025-10-20 21:13:25,470 - INFO - Loaded 30 days for SOL-USDT-SWAP
+2025-10-20 21:13:25,796 - INFO - Loaded 30 days for XRP-USDT-SWAP
+2025-10-20 21:13:25,808 - INFO - Correlation BTC/ETH-USDT-SWAP: 0.9230
+2025-10-20 21:13:25,808 - INFO - Correlation BTC/BNB-USDT-SWAP: 0.5406
+2025-10-20 21:13:25,809 - INFO - Correlation BTC/SOL-USDT-SWAP: 0.8390
+2025-10-20 21:13:25,809 - INFO - Correlation BTC/XRP-USDT-SWAP: 0.7121
+2025-10-20 21:13:25,809 - INFO - Calculated basket weights:
+2025-10-20 21:13:25,809 - INFO -   ETH-USDT-SWAP: 0.306 (corr=0.923)
+2025-10-20 21:13:25,809 - INFO -   BNB-USDT-SWAP: 0.179 (corr=0.541)
+2025-10-20 21:13:25,809 - INFO -   SOL-USDT-SWAP: 0.278 (corr=0.839)
+2025-10-20 21:13:25,809 - INFO -   XRP-USDT-SWAP: 0.236 (corr=0.712)
+2025-10-20 21:13:25,810 - INFO - Monitoring symbols: ['ETH-USDT-SWAP', 'BNB-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP']
+2025-10-20 21:13:26,112 - WARNING - Some prices are missing.
+2025-10-20 21:14:26,472 - WARNING - Some prices are missing.
+2025-10-20 21:15:26,865 - WARNING - Some prices are missing.
+2025-10-20 21:16:27,283 - WARNING - Some prices are missing.
+2025-10-20 21:17:27,665 - WARNING - Some prices are missing.
+2025-10-20 21:22:09,128 - INFO - Starting OKX basket monitor...
+2025-10-20 21:22:09,129 - INFO - Fetching historical data from OKX...
+2025-10-20 21:22:11,865 - INFO - Loaded 30 days for BTC-USDT-SWAP
+2025-10-20 21:22:12,120 - INFO - Loaded 30 days for ETH-USDT-SWAP
+2025-10-20 21:22:12,448 - INFO - Loaded 30 days for BNB-USDT-SWAP
+2025-10-20 21:22:12,774 - INFO - Loaded 30 days for SOL-USDT-SWAP
+2025-10-20 21:22:13,100 - INFO - Loaded 30 days for XRP-USDT-SWAP
+2025-10-20 21:22:13,100 - INFO - Correlation BTC/ETH-USDT-SWAP: 0.9229
+2025-10-20 21:22:13,101 - INFO - Correlation BTC/BNB-USDT-SWAP: 0.5408
+2025-10-20 21:22:13,101 - INFO - Correlation BTC/SOL-USDT-SWAP: 0.8387
+2025-10-20 21:22:13,101 - INFO - Correlation BTC/XRP-USDT-SWAP: 0.7120
+2025-10-20 21:22:13,101 - INFO - Calculated basket weights:
+2025-10-20 21:22:13,101 - INFO -   ETH-USDT-SWAP: 0.306 (corr=0.923)
+2025-10-20 21:22:13,101 - INFO -   BNB-USDT-SWAP: 0.179 (corr=0.541)
+2025-10-20 21:22:13,102 - INFO -   SOL-USDT-SWAP: 0.278 (corr=0.839)
+2025-10-20 21:22:13,102 - INFO -   XRP-USDT-SWAP: 0.236 (corr=0.712)
+2025-10-20 21:22:13,102 - INFO - Monitoring symbols: ['ETH-USDT-SWAP', 'BNB-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP']
+2025-10-20 21:22:13,481 - WARNING - Some prices are missing.
+2025-10-20 21:23:13,914 - WARNING - Some prices are missing.
+2025-10-20 21:24:14,313 - WARNING - Some prices are missing.
+2025-10-20 21:25:14,797 - WARNING - Some prices are missing.
+2025-10-20 21:26:15,217 - WARNING - Some prices are missing.
+2025-10-20 21:27:15,606 - WARNING - Some prices are missing.
+2025-10-20 21:28:15,999 - WARNING - Some prices are missing.
+2025-10-20 21:29:16,412 - WARNING - Some prices are missing.
+2025-10-20 21:30:16,829 - WARNING - Some prices are missing.
+2025-10-20 21:30:28,830 - INFO - Starting OKX basket monitor...
+2025-10-20 21:30:28,833 - INFO - Fetching historical data from OKX...
+2025-10-20 21:30:31,726 - INFO - Loaded 30 days for BTC-USDT-SWAP
+2025-10-20 21:30:32,045 - INFO - Loaded 30 days for ETH-USDT-SWAP
+2025-10-20 21:30:32,358 - INFO - Loaded 30 days for BNB-USDT-SWAP
+2025-10-20 21:30:32,690 - INFO - Loaded 30 days for SOL-USDT-SWAP
+2025-10-20 21:30:33,065 - INFO - Loaded 30 days for XRP-USDT-SWAP
+2025-10-20 21:30:33,067 - INFO - Correlation BTC/ETH-USDT-SWAP: 0.9228
+2025-10-20 21:30:33,068 - INFO - Correlation BTC/BNB-USDT-SWAP: 0.5414
+2025-10-20 21:30:33,069 - INFO - Correlation BTC/SOL-USDT-SWAP: 0.8381
+2025-10-20 21:30:33,070 - INFO - Correlation BTC/XRP-USDT-SWAP: 0.7114
+2025-10-20 21:30:33,070 - INFO - Calculated basket weights:
+2025-10-20 21:30:33,070 - INFO -   ETH-USDT-SWAP: 0.306 (corr=0.923)
+2025-10-20 21:30:33,070 - INFO -   BNB-USDT-SWAP: 0.180 (corr=0.541)
+2025-10-20 21:30:33,070 - INFO -   SOL-USDT-SWAP: 0.278 (corr=0.838)
+2025-10-20 21:30:33,070 - INFO -   XRP-USDT-SWAP: 0.236 (corr=0.711)
+2025-10-20 21:30:33,070 - INFO - Monitoring symbols: ['ETH-USDT-SWAP', 'BNB-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP']
+2025-10-20 21:30:33,445 - WARNING - Missing tickers: BTC-USDT-SWAP, ETH-USDT-SWAP, BNB-USDT-SWAP, SOL-USDT-SWAP, XRP-USDT-SWAP
+2025-10-20 21:34:50,609 - INFO - Starting OKX basket monitor...
+2025-10-20 21:34:50,609 - INFO - Fetching historical data from OKX...
+2025-10-20 21:34:53,027 - INFO - Loaded 30 days for BTC-USDT-SWAP
+2025-10-20 21:34:53,343 - INFO - Loaded 30 days for ETH-USDT-SWAP
+2025-10-20 21:34:53,661 - INFO - Loaded 30 days for BNB-USDT-SWAP
+2025-10-20 21:34:54,008 - INFO - Loaded 30 days for SOL-USDT-SWAP
+2025-10-20 21:34:54,276 - INFO - Loaded 30 days for XRP-USDT-SWAP
+2025-10-20 21:34:54,277 - INFO - Correlation BTC/ETH-USDT-SWAP: 0.9227
+2025-10-20 21:34:54,277 - INFO - Correlation BTC/BNB-USDT-SWAP: 0.5414
+2025-10-20 21:34:54,278 - INFO - Correlation BTC/SOL-USDT-SWAP: 0.8378
+2025-10-20 21:34:54,278 - INFO - Correlation BTC/XRP-USDT-SWAP: 0.7111
+2025-10-20 21:34:54,278 - INFO - Calculated basket weights:
+2025-10-20 21:34:54,278 - INFO -   ETH-USDT-SWAP: 0.306 (corr=0.923)
+2025-10-20 21:34:54,279 - INFO -   BNB-USDT-SWAP: 0.180 (corr=0.541)
+2025-10-20 21:34:54,279 - INFO -   SOL-USDT-SWAP: 0.278 (corr=0.838)
+2025-10-20 21:34:54,279 - INFO -   XRP-USDT-SWAP: 0.236 (corr=0.711)
+2025-10-20 21:34:54,279 - INFO - Monitoring symbols: ['ETH-USDT-SWAP', 'BNB-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP']
+2025-10-20 21:34:54,688 - WARNING - Missing tickers: BTC-USDT-SWAP, ETH-USDT-SWAP, BNB-USDT-SWAP, SOL-USDT-SWAP, XRP-USDT-SWAP
+2025-10-20 21:35:55,237 - WARNING - Missing tickers: BTC-USDT-SWAP, ETH-USDT-SWAP, BNB-USDT-SWAP, SOL-USDT-SWAP, XRP-USDT-SWAP
+2025-10-20 21:36:13,860 - INFO - Starting OKX basket monitor...
+2025-10-20 21:36:13,860 - INFO - Fetching historical data from OKX...
+2025-10-20 21:36:16,549 - INFO - Loaded 30 days for BTC-USDT-SWAP
+2025-10-20 21:36:17,079 - INFO - Loaded 30 days for ETH-USDT-SWAP
+2025-10-20 21:36:17,403 - INFO - Loaded 30 days for BNB-USDT-SWAP
+2025-10-20 21:36:17,721 - INFO - Loaded 30 days for SOL-USDT-SWAP
+2025-10-20 21:36:18,036 - INFO - Loaded 30 days for XRP-USDT-SWAP
+2025-10-20 21:36:18,041 - INFO - Correlation BTC/ETH-USDT-SWAP: 0.9226
+2025-10-20 21:36:18,042 - INFO - Correlation BTC/BNB-USDT-SWAP: 0.5413
+2025-10-20 21:36:18,042 - INFO - Correlation BTC/SOL-USDT-SWAP: 0.8376
+2025-10-20 21:36:18,043 - INFO - Correlation BTC/XRP-USDT-SWAP: 0.7108
+2025-10-20 21:36:18,045 - INFO - Calculated basket weights:
+2025-10-20 21:36:18,045 - INFO -   ETH-USDT-SWAP: 0.306 (corr=0.923)
+2025-10-20 21:36:18,045 - INFO -   BNB-USDT-SWAP: 0.180 (corr=0.541)
+2025-10-20 21:36:18,045 - INFO -   SOL-USDT-SWAP: 0.278 (corr=0.838)
+2025-10-20 21:36:18,045 - INFO -   XRP-USDT-SWAP: 0.236 (corr=0.711)
+2025-10-20 21:36:18,045 - INFO - Monitoring symbols: ['ETH-USDT-SWAP', 'BNB-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP']
+2025-10-20 21:36:18,401 - WARNING - Missing tickers: BTC-USDT-SWAP, ETH-USDT-SWAP, BNB-USDT-SWAP, SOL-USDT-SWAP, XRP-USDT-SWAP
+2025-10-20 21:36:55,985 - WARNING - Missing tickers: BTC-USDT-SWAP, ETH-USDT-SWAP, BNB-USDT-SWAP, SOL-USDT-SWAP, XRP-USDT-SWAP
+2025-10-20 21:37:18,822 - WARNING - Missing tickers: BTC-USDT-SWAP, ETH-USDT-SWAP, BNB-USDT-SWAP, SOL-USDT-SWAP, XRP-USDT-SWAP
+2025-10-20 21:37:56,425 - WARNING - Missing tickers: BTC-USDT-SWAP, ETH-USDT-SWAP, BNB-USDT-SWAP, SOL-USDT-SWAP, XRP-USDT-SWAP
+2025-10-20 21:39:00,419 - INFO - Starting OKX basket monitor...
+2025-10-20 21:39:00,420 - INFO - Fetching historical data from OKX...
+2025-10-20 21:39:03,053 - INFO - Loaded 30 days for BTC-USDT-SWAP
+2025-10-20 21:39:03,384 - INFO - Loaded 30 days for ETH-USDT-SWAP
+2025-10-20 21:39:03,718 - INFO - Loaded 30 days for BNB-USDT-SWAP
+2025-10-20 21:39:04,039 - INFO - Loaded 30 days for SOL-USDT-SWAP
+2025-10-20 21:39:04,346 - INFO - Loaded 30 days for XRP-USDT-SWAP
+2025-10-20 21:39:04,346 - INFO - Correlation BTC/ETH-USDT-SWAP: 0.9226
+2025-10-20 21:39:04,347 - INFO - Correlation BTC/BNB-USDT-SWAP: 0.5413
+2025-10-20 21:39:04,347 - INFO - Correlation BTC/SOL-USDT-SWAP: 0.8376
+2025-10-20 21:39:04,348 - INFO - Correlation BTC/XRP-USDT-SWAP: 0.7107
+2025-10-20 21:39:04,348 - INFO - Calculated basket weights:
+2025-10-20 21:39:04,348 - INFO -   ETH-USDT-SWAP: 0.306 (corr=0.923)
+2025-10-20 21:39:04,348 - INFO -   BNB-USDT-SWAP: 0.180 (corr=0.541)
+2025-10-20 21:39:04,349 - INFO -   SOL-USDT-SWAP: 0.278 (corr=0.838)
+2025-10-20 21:39:04,349 - INFO -   XRP-USDT-SWAP: 0.236 (corr=0.711)
+2025-10-20 21:39:04,349 - INFO - Monitoring symbols: ['ETH-USDT-SWAP', 'BNB-USDT-SWAP', 'SOL-USDT-SWAP', 'XRP-USDT-SWAP']
+2025-10-20 21:39:04,671 - WARNING - Missing tickers: BTC-USDT-SWAP, ETH-USDT-SWAP, BNB-USDT-SWAP, SOL-USDT-SWAP, XRP-USDT-SWAP
+2025-10-20 21:40:05,158 - WARNING - Missing tickers: BTC-USDT-SWAP, ETH-USDT-SWAP, BNB-USDT-SWAP, SOL-USDT-SWAP, XRP-USDT-SWAP
+2025-10-20 21:41:05,671 - WARNING - Missing tickers: BTC-USDT-SWAP, ETH-USDT-SWAP, BNB-USDT-SWAP, SOL-USDT-SWAP, XRP-USDT-SWAP
+2025-10-20 21:42:06,038 - WARNING - Missing tickers: BTC-USDT-SWAP, ETH-USDT-SWAP, BNB-USDT-SWAP, SOL-USDT-SWAP, XRP-USDT-SWAP
+2025-10-20 21:43:06,464 - WARNING - Missing tickers: BTC-USDT-SWAP, ETH-USDT-SWAP, BNB-USDT-SWAP, SOL-USDT-SWAP, XRP-USDT-SWAP
+2025-10-20 21:44:06,885 - WARNING - Missing tickers: BTC-USDT-SWAP, ETH-USDT-SWAP, BNB-USDT-SWAP, SOL-USDT-SWAP, XRP-USDT-SWAP
+2025-10-20 21:45:19,035 - INFO - Starting OKX basket monitor...
+2025-10-20 21:45:19,036 - INFO - Fetching historical data from OKX...
+2025-10-20 21:45:21,618 - INFO - Loaded 30 days for BTC/USDT:USDT
+2025-10-20 21:45:21,940 - INFO - Loaded 30 days for ETH/USDT:USDT
+2025-10-20 21:45:22,264 - INFO - Loaded 30 days for BNB/USDT:USDT
+2025-10-20 21:45:22,591 - INFO - Loaded 30 days for SOL/USDT:USDT
+2025-10-20 21:45:22,931 - INFO - Loaded 30 days for XRP/USDT:USDT
+2025-10-20 21:45:22,932 - INFO - Correlation BTC/ETH/USDT:USDT: 0.9226
+2025-10-20 21:45:22,932 - INFO - Correlation BTC/BNB/USDT:USDT: 0.5413
+2025-10-20 21:45:22,932 - INFO - Correlation BTC/SOL/USDT:USDT: 0.8376
+2025-10-20 21:45:22,933 - INFO - Correlation BTC/XRP/USDT:USDT: 0.7108
+2025-10-20 21:45:22,933 - INFO - Calculated basket weights:
+2025-10-20 21:45:22,933 - INFO -   ETH/USDT:USDT: 0.306 (corr=0.923)
+2025-10-20 21:45:22,933 - INFO -   BNB/USDT:USDT: 0.180 (corr=0.541)
+2025-10-20 21:45:22,934 - INFO -   SOL/USDT:USDT: 0.278 (corr=0.838)
+2025-10-20 21:45:22,934 - INFO -   XRP/USDT:USDT: 0.236 (corr=0.711)
+2025-10-20 21:45:22,934 - INFO - Monitoring symbols: ['ETH/USDT:USDT', 'BNB/USDT:USDT', 'SOL/USDT:USDT', 'XRP/USDT:USDT']
+2025-10-20 21:46:04,263 - INFO - Starting OKX basket monitor...
+2025-10-20 21:46:04,264 - INFO - Fetching historical data from OKX...
+2025-10-20 21:46:06,753 - INFO - Loaded 30 days for BTC/USDT:USDT
+2025-10-20 21:46:07,023 - INFO - Loaded 30 days for ETH/USDT:USDT
+2025-10-20 21:46:07,349 - INFO - Loaded 30 days for BNB/USDT:USDT
+2025-10-20 21:46:07,689 - INFO - Loaded 30 days for SOL/USDT:USDT
+2025-10-20 21:46:08,020 - INFO - Loaded 30 days for XRP/USDT:USDT
+2025-10-20 21:46:08,026 - INFO - Correlation BTC/ETH/USDT:USDT: 0.9226
+2025-10-20 21:46:08,027 - INFO - Correlation BTC/BNB/USDT:USDT: 0.5412
+2025-10-20 21:46:08,027 - INFO - Correlation BTC/SOL/USDT:USDT: 0.8375
+2025-10-20 21:46:08,027 - INFO - Correlation BTC/XRP/USDT:USDT: 0.7106
+2025-10-20 21:46:08,028 - INFO - Calculated basket weights:
+2025-10-20 21:46:08,028 - INFO -   ETH/USDT:USDT: 0.306 (corr=0.923)
+2025-10-20 21:46:08,028 - INFO -   BNB/USDT:USDT: 0.180 (corr=0.541)
+2025-10-20 21:46:08,028 - INFO -   SOL/USDT:USDT: 0.278 (corr=0.838)
+2025-10-20 21:46:08,028 - INFO -   XRP/USDT:USDT: 0.236 (corr=0.711)
+2025-10-20 21:46:08,028 - INFO - Monitoring symbols: ['ETH/USDT:USDT', 'BNB/USDT:USDT', 'SOL/USDT:USDT', 'XRP/USDT:USDT']
+2025-10-20 21:53:52,352 - INFO - Starting OKX basket monitor...
+2025-10-20 21:53:52,353 - INFO - Fetching historical data from OKX...
+2025-10-20 21:53:54,968 - INFO - Loaded 30 days for BTC/USDT:USDT
+2025-10-20 21:53:55,235 - INFO - Loaded 30 days for ETH/USDT:USDT
+2025-10-20 21:53:55,492 - INFO - Loaded 30 days for BNB/USDT:USDT
+2025-10-20 21:53:56,066 - INFO - Loaded 30 days for SOL/USDT:USDT
+2025-10-20 21:53:56,359 - INFO - Loaded 30 days for XRP/USDT:USDT
+2025-10-20 21:53:56,360 - INFO - Correlation BTC/ETH/USDT:USDT: 0.9225
+2025-10-20 21:53:56,360 - INFO - Correlation BTC/BNB/USDT:USDT: 0.5409
+2025-10-20 21:53:56,360 - INFO - Correlation BTC/SOL/USDT:USDT: 0.8373
+2025-10-20 21:53:56,361 - INFO - Correlation BTC/XRP/USDT:USDT: 0.7104
+2025-10-20 21:53:56,361 - INFO - Calculated basket weights:
+2025-10-20 21:53:56,361 - INFO -   ETH/USDT:USDT: 0.306 (corr=0.923)
+2025-10-20 21:53:56,361 - INFO -   BNB/USDT:USDT: 0.180 (corr=0.541)
+2025-10-20 21:53:56,361 - INFO -   SOL/USDT:USDT: 0.278 (corr=0.837)
+2025-10-20 21:53:56,362 - INFO -   XRP/USDT:USDT: 0.236 (corr=0.710)
+2025-10-20 21:53:56,362 - INFO - Monitoring symbols: ['ETH/USDT:USDT', 'BNB/USDT:USDT', 'SOL/USDT:USDT', 'XRP/USDT:USDT']
+2025-10-20 21:57:04,097 - INFO - Starting OKX basket monitor...
+2025-10-20 21:57:04,098 - INFO - Fetching historical data from OKX...
+2025-10-20 21:57:06,643 - INFO - Loaded 30 days for BTC/USDT:USDT
+2025-10-20 21:57:06,961 - INFO - Loaded 30 days for ETH/USDT:USDT
+2025-10-20 21:57:07,215 - INFO - Loaded 30 days for BNB/USDT:USDT
+2025-10-20 21:57:07,547 - INFO - Loaded 30 days for SOL/USDT:USDT
+2025-10-20 21:57:07,860 - INFO - Loaded 30 days for XRP/USDT:USDT
+2025-10-20 21:57:07,861 - INFO - Correlation BTC/ETH/USDT:USDT: 0.9225
+2025-10-20 21:57:07,861 - INFO - Correlation BTC/BNB/USDT:USDT: 0.5407
+2025-10-20 21:57:07,862 - INFO - Correlation BTC/SOL/USDT:USDT: 0.8374
+2025-10-20 21:57:07,862 - INFO - Correlation BTC/XRP/USDT:USDT: 0.7105
+2025-10-20 21:57:07,862 - INFO - Calculated basket weights:
+2025-10-20 21:57:07,862 - INFO -   ETH/USDT:USDT: 0.306 (corr=0.923)
+2025-10-20 21:57:07,863 - INFO -   BNB/USDT:USDT: 0.180 (corr=0.541)
+2025-10-20 21:57:07,863 - INFO -   SOL/USDT:USDT: 0.278 (corr=0.837)
+2025-10-20 21:57:07,863 - INFO -   XRP/USDT:USDT: 0.236 (corr=0.710)
+2025-10-20 21:57:07,863 - INFO - Monitoring symbols: ['ETH/USDT:USDT', 'BNB/USDT:USDT', 'SOL/USDT:USDT', 'XRP/USDT:USDT']
+Starting OKX basket monitor...
+Fetching historical data from OKX...
+Loaded 30 days for BTC/USDT:USDT
+Loaded 30 days for ETH/USDT:USDT
+Loaded 30 days for BNB/USDT:USDT
+Loaded 30 days for SOL/USDT:USDT
+Loaded 30 days for XRP/USDT:USDT
+Correlation BTC/ETH/USDT:USDT: 0.9226
+Correlation BTC/BNB/USDT:USDT: 0.5411
+Correlation BTC/SOL/USDT:USDT: 0.8373
+Correlation BTC/XRP/USDT:USDT: 0.7106
+Calculated basket weights:
+  ETH/USDT:USDT: 0.306 (corr=0.923)
+  BNB/USDT:USDT: 0.180 (corr=0.541)
+  SOL/USDT:USDT: 0.278 (corr=0.837)
+  XRP/USDT:USDT: 0.236 (corr=0.711)
+Monitoring symbols: ['ETH/USDT:USDT', 'BNB/USDT:USDT', 'SOL/USDT:USDT', 'XRP/USDT:USDT']
+Starting basket monitor...
+Fetching historical data from OKX...
+Error loading data for BTC/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for ETH/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for BNB/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for SOL/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for XRP/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Not enough valid symbols for analysis.
+Starting basket monitor...
+Fetching historical data from OKX...
+Error loading data for BTC/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for ETH/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for BNB/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for SOL/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for XRP/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Not enough valid symbols for analysis.
+Starting basket monitor...
+Fetching historical data from OKX...
+Error loading data for BTC/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for ETH/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for BNB/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for SOL/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for XRP/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Not enough valid symbols for analysis.
+Starting basket monitor...
+Fetching historical data from OKX...
+Error loading data for BTC/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for ETH/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for BNB/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for SOL/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for XRP/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Not enough valid symbols for analysis.
+Starting basket monitor...
+Fetching historical data from OKX...
+Error loading data for BTC/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for ETH/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for BNB/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for SOL/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for XRP/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Not enough valid symbols for analysis.
+Starting basket monitor...
+Fetching historical data from OKX...
+Error loading data for BTC/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for ETH/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for BNB/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for SOL/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for XRP/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Not enough valid symbols for analysis.
+Starting basket monitor...
+Fetching historical data from OKX...
+Error loading data for BTC/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for ETH/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for BNB/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for SOL/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for XRP/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Not enough valid symbols for analysis.
+Starting basket monitor...
+Fetching historical data from OKX...
+Error loading data for BTC/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for ETH/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for BNB/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for SOL/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for XRP/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Not enough valid symbols for analysis.
+Starting basket monitor...
+Fetching historical data from OKX...
+Error loading data for BTC/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for ETH/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for BNB/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for SOL/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Error loading data for XRP/USDT:USDT: ufunc 'subtract' cannot use operands with types dtype('O') and dtype('<m8[D]')
+Not enough valid symbols for analysis.
+Starting OKX basket monitor...
+Fetching historical data from OKX...
+Loaded 30 days for BTC/USDT:USDT
+Loaded 30 days for ETH/USDT:USDT
+Loaded 30 days for BNB/USDT:USDT
+Loaded 30 days for SOL/USDT:USDT
+Loaded 30 days for XRP/USDT:USDT
+Correlation BTC/ETH/USDT:USDT: 0.9227
+Correlation BTC/BNB/USDT:USDT: 0.5409
+Correlation BTC/SOL/USDT:USDT: 0.8378
+Correlation BTC/XRP/USDT:USDT: 0.7107
+Calculated basket weights:
+  ETH/USDT:USDT: 0.306 (corr=0.923)
+  BNB/USDT:USDT: 0.180 (corr=0.541)
+  SOL/USDT:USDT: 0.278 (corr=0.838)
+  XRP/USDT:USDT: 0.236 (corr=0.711)
+Monitoring symbols: ['ETH/USDT:USDT', 'BNB/USDT:USDT', 'SOL/USDT:USDT', 'XRP/USDT:USDT']
