@@ -101,21 +101,23 @@ class OKXBasketMonitor:
             logger.info(f"  {s}: {w:.3f} (corr={c:.3f})")
 
     def get_current_prices(self):
-        """Get current prices from OKX"""
+        """Get current prices safely"""
         prices = {}
         try:
             symbols = [self.target] + self.basket_symbols
             tickers = self.exchange.fetch_tickers(symbols)
+            missing = []
             for s in symbols:
                 if s in tickers and tickers[s].get("last") is not None:
                     prices[s] = tickers[s]["last"]
-            if len(prices) != len(symbols):
-                logger.warning("Some prices are missing.")
-                return None
+                else:
+                    missing.append(s)
+            if missing:
+                logger.warning(f"Missing tickers: {', '.join(missing)}")
             return prices
         except Exception as e:
             logger.error(f"Error fetching tickers: {e}")
-            return None
+            return {}
 
     def calculate_basket_price(self, prices):
         """Compute weighted basket price"""
@@ -194,17 +196,12 @@ class OKXBasketMonitor:
                 if z is not None:
                     mean, std = stats
                     signal = self.trading_signal(z)
-                    report = f"""
-=== OKX FUTURES BASKET MONITOR ===
-Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC
-BTC-USDT-SWAP: ${prices[self.target]:.2f}
-Basket Price: ${self.calculate_basket_price(prices):.2f}
-Spread: {spread:.6f}
-Mean: {mean:.6f} ± {std:.6f}
-Z-Score: {z:.4f}
-Signal: {signal}
-Status: {"🟢 NORMAL" if abs(z) < 0.5 else "🟡 WATCH" if abs(z) < 2 else "🔴 SIGNAL"}
-"""
+                    # Compact console report
+                    report = (
+                        f"BTC: ${prices[self.target]:.2f} | "
+                        f"Basket: ${self.calculate_basket_price(prices):.2f} | "
+                        f"Spread: {spread:.6f} | Z: {z:.4f} | Signal: {signal}"
+                    )
                     print(report)
                     if abs(z) >= 2.0:
                         logger.warning(f"TRADE SIGNAL! {signal} (Z={z:.2f})")
