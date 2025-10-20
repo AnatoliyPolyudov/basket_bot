@@ -15,7 +15,7 @@ import exchange class BasketManager:
             tickers = exchange.fetch_tickers() 
             volume_data = [] for symbol, ticker in 
             tickers.items():
-                if not 
+                if 
                 symbol.endswith(config.FUTURES_SUFFIX) 
                 or symbol == config.TARGET_PAIR:
                     continue volume = 
@@ -54,11 +54,10 @@ import exchange class BasketManager:
                 continue min_len = 
             min(len(target_prices), len(symbol_prices)) 
             if min_len < config.LOOKBACK // 2:
-                continue target_slice = 
-            target_prices[-min_len:] symbol_slice = 
-            symbol_prices[-min_len:] correlation = 
-            np.corrcoef(target_slice, symbol_slice)[0, 
-            1] if not np.isnan(correlation):
+                continue correlation = 
+            np.corrcoef(target_prices[-min_len:], 
+            symbol_prices[-min_len:])[0, 1] if not 
+            np.isnan(correlation):
                 correlations.append((symbol, 
                 correlation))
         return correlations def build_basket(self) -> 
@@ -110,7 +109,7 @@ import exchange class BasketManager:
                 price for {symbol}: {e}") return None
         if len(prices) != len(self.basket_symbols): 
             return None
-        basket_price = np.dot(self.basket_weights, 
-        prices) return float(basket_price)
+        return float(np.dot(self.basket_weights, 
+        prices))
 # Global basket manager instance
 basket_manager = BasketManager()

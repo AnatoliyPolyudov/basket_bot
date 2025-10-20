@@ -31,7 +31,10 @@ class TradingConfig:
     bool = True
     # Symbol Configuration
     FUTURES_SUFFIX: str = "-SWAP" SPOT_SUFFIX: str = 
-    "/USDT" def validate(self):
+    "/USDT"
+    # Optional: Capital and risk percent for utils.py
+    CAPITAL: float = 10000.0 RISK_PERCENT: float = 1.0 
+    def validate(self):
         if self.Z_ENTER <= self.Z_EXIT: raise 
             ValueError("Z_ENTER must be greater than 
             Z_EXIT")
@@ -47,3 +50,4 @@ class TradingConfig:
             1 and 100")
 # Global configuration instance
 config = TradingConfig()
+

@@ -1,7 +1,6 @@
 # exchange.py
 import ccxt import logging from typing import Dict, 
-List, Optional from config import config class 
-OKXExchange:
+List from config import config class OKXExchange:
     def __init__(self): self.logger = 
         logging.getLogger(__name__) self.exchange = 
         self._initialize_exchange() self.markets = None 
