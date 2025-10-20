@@ -22,22 +22,21 @@ class OKXBasketMonitor:
         # Public OKX connection (no API keys needed)
         self.exchange = ccxt.okx({
             "enableRateLimit": True,
-            "options": {"defaultType": "swap"},
+            "options": {"defaultType": "future"},
             "sandbox": False
         })
-        self.target = "BTC-USDT-SWAP"
+        self.target = "BTC/USDT:USDT"
         self.basket_symbols = [
-            "ETH-USDT-SWAP",
-            "BNB-USDT-SWAP",
-            "SOL-USDT-SWAP",
-            "XRP-USDT-SWAP"
+            "ETH/USDT:USDT",
+            "BNB/USDT:USDT",
+            "SOL/USDT:USDT",
+            "XRP/USDT:USDT"
         ]
         self.basket_weights = []
         self.historical_data = {}
         self.lookback_days = 30
 
     def fetch_historical_data(self):
-        """Fetch historical daily OHLCV data for all symbols"""
         logger.info("Fetching historical data from OKX...")
 
         for symbol in [self.target] + self.basket_symbols:
@@ -46,18 +45,14 @@ class OKXBasketMonitor:
                     (datetime.utcnow() - pd.Timedelta(days=self.lookback_days)).isoformat()
                 )
                 ohlcv = self.exchange.fetch_ohlcv(symbol, "1d", since=since, limit=30)
-
                 if not ohlcv:
                     logger.warning(f"No data for {symbol}")
                     continue
-
-                closes = [candle[4] for candle in ohlcv]
+                closes = [c[4] for c in ohlcv]
                 self.historical_data[symbol] = closes
                 logger.info(f"Loaded {len(closes)} days for {symbol}")
-
             except Exception as e:
                 logger.error(f"Error loading data for {symbol}: {e}")
-                continue
 
         valid = [s for s in [self.target] + self.basket_symbols
                  if s in self.historical_data and len(self.historical_data[s]) >= 10]
@@ -65,11 +60,9 @@ class OKXBasketMonitor:
         if len(valid) < 3:
             logger.error("Not enough valid symbols for analysis.")
             return False
-
         return True
 
     def calculate_basket_weights(self):
-        """Compute basket weights based on correlations with BTC"""
         correlations, valid = [], []
 
         for symbol in self.basket_symbols:
@@ -101,7 +94,6 @@ class OKXBasketMonitor:
             logger.info(f"  {s}: {w:.3f} (corr={c:.3f})")
 
     def get_current_prices(self):
-        """Get current prices safely"""
         prices = {}
         try:
             symbols = [self.target] + self.basket_symbols
@@ -114,19 +106,17 @@ class OKXBasketMonitor:
                     missing.append(s)
             if missing:
                 logger.warning(f"Missing tickers: {', '.join(missing)}")
+                return None
             return prices
         except Exception as e:
             logger.error(f"Error fetching tickers: {e}")
-            return {}
+            return None
 
     def calculate_basket_price(self, prices):
-        """Compute weighted basket price"""
         return sum(self.basket_weights[i] * prices[s]
-                   for i, s in enumerate(self.basket_symbols)
-                   if s in prices)
+                   for i, s in enumerate(self.basket_symbols) if s in prices)
 
     def calculate_spread_series(self):
-        """Compute historical spread ratio"""
         min_len = min(len(self.historical_data[s])
                       for s in [self.target] + self.basket_symbols
                       if s in self.historical_data)
@@ -141,7 +131,6 @@ class OKXBasketMonitor:
         return target / basket
 
     def calculate_zscore(self, current_prices):
-        """Compute current Z-score"""
         try:
             if not all(s in current_prices for s in [self.target] + self.basket_symbols):
                 return None, None, None
@@ -159,7 +148,6 @@ class OKXBasketMonitor:
             return None, None, None
 
     def trading_signal(self, z):
-        """Return trading signal string"""
         if z is None:
             return "NO DATA"
         if z > 2.0:
@@ -171,7 +159,6 @@ class OKXBasketMonitor:
         return "HOLD"
 
     def run(self, interval_minutes=5):
-        """Main monitoring loop"""
         logger.info("Starting OKX basket monitor...")
 
         if not self.fetch_historical_data():
@@ -196,12 +183,16 @@ class OKXBasketMonitor:
                 if z is not None:
                     mean, std = stats
                     signal = self.trading_signal(z)
-                    # Compact console report
-                    report = (
-                        f"BTC: ${prices[self.target]:.2f} | "
-                        f"Basket: ${self.calculate_basket_price(prices):.2f} | "
-                        f"Spread: {spread:.6f} | Z: {z:.4f} | Signal: {signal}"
-                    )
+                    report = f"""
+=== OKX FUTURES BASKET MONITOR ===
+BTC-USDT: {prices[self.target]:.2f}
+Basket Price: {self.calculate_basket_price(prices):.2f}
+Spread: {spread:.6f}
+Mean: {mean:.6f} ± {std:.6f}
+Z-Score: {z:.4f}
+Signal: {signal}
+Status: {"🟢 NORMAL" if abs(z) < 0.5 else "🟡 WATCH" if abs(z) < 2 else "🔴 SIGNAL"}
+"""
                     print(report)
                     if abs(z) >= 2.0:
                         logger.warning(f"TRADE SIGNAL! {signal} (Z={z:.2f})")
@@ -215,9 +206,11 @@ class OKXBasketMonitor:
                 logger.error(f"Error in loop: {e}")
                 time.sleep(60)
 
+
 def main():
     monitor = OKXBasketMonitor()
     monitor.run(interval_minutes=5)
+
 
 if __name__ == "__main__":
     main()
