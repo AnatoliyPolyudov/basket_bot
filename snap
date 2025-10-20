@@ -1,0 +1,877 @@
+
+
+
+===== basket_manager.py =====
+
+
+import logging import numpy as np import pandas as pd 
+from typing import List, Tuple, Optional from datetime 
+import datetime, timedelta from config import config 
+from exchange import exchange class BasketManager:
+    def __init__(self): self.logger = 
+        logging.getLogger(__name__) self.basket_symbols 
+        = [] self.basket_weights = [] 
+        self.last_rebalance = datetime.utcnow() - 
+        timedelta(hours=config.REBALANCE_HOURS + 1)
+        
+    def get_high_volume_symbols(self) -> List[str]: 
+        try:
+            tickers = exchange.fetch_tickers() 
+            volume_data = []
+            
+            for symbol, ticker in tickers.items(): if 
+                not 
+                symbol.endswith(config.FUTURES_SUFFIX) 
+                or symbol == config.TARGET_PAIR:
+                    continue
+                    
+                volume = ticker.get('quoteVolume', 0) 
+                if volume and volume > 
+                config.MIN_VOLUME_FILTER:
+                    volume_data.append((symbol, 
+                    volume))
+            
+            volume_data.sort(key=lambda x: x[1], 
+            reverse=True) return [s[0] for s in 
+            volume_data[:config.TOP_BY_VOLUME]]
+            
+        except Exception as e: 
+            self.logger.error(f"Error getting volume 
+            symbols: {e}") return []
+    def fetch_ohlcv_data(self, symbol: str, limit: int 
+    = None) -> Optional[np.ndarray]:
+        try: ohlcv = exchange.fetch_ohlcv(symbol, 
+            limit=limit or config.LOOKBACK) if not 
+            ohlcv:
+                return None
+                
+            closes = [candle[4] for candle in ohlcv] 
+            return np.array(closes, dtype=np.float64)
+            
+        except Exception as e: 
+            self.logger.error(f"Error fetching OHLCV 
+            for {symbol}: {e}") return None
+    def calculate_correlations(self, candidates: 
+    List[str]) -> List[Tuple[str, float]]:
+        target_prices = 
+        self.fetch_ohlcv_data(config.TARGET_PAIR) if 
+        target_prices is None or len(target_prices) < 
+        config.LOOKBACK // 2:
+            return []
+        
+        correlations = []
+        
+        for symbol in candidates: symbol_prices = 
+            self.fetch_ohlcv_data(symbol) if 
+            symbol_prices is None:
+                continue
+                
+            min_len = min(len(target_prices), 
+            len(symbol_prices)) if min_len < 
+            config.LOOKBACK // 2:
+                continue
+                
+            target_slice = target_prices[-min_len:] 
+            symbol_slice = symbol_prices[-min_len:]
+            
+            correlation = np.corrcoef(target_slice, 
+            symbol_slice)[0, 1]
+            
+            if not np.isnan(correlation): 
+                correlations.append((symbol, 
+                correlation))
+        
+        return correlations def build_basket(self) -> 
+    bool:
+        self.logger.info("Building new basket...")
+        
+        candidates = self.get_high_volume_symbols() if 
+        not candidates:
+            self.logger.error("No candidates found") 
+            return False
+            
+        correlations = 
+        self.calculate_correlations(candidates) if not 
+        correlations:
+            self.logger.error("No correlations 
+            calculated") return False
+        
+        correlations.sort(key=lambda x: abs(x[1]), 
+        reverse=True) selected = 
+        correlations[:config.BASKET_SIZE]
+        
+        if len(selected) < 2: self.logger.error("Not 
+            enough correlated instruments") return 
+            False
+        
+        symbols = [s[0] for s in selected] corr_values 
+        = np.array([s[1] for s in selected])
+        
+        weights = np.abs(corr_values) weights = weights 
+        / weights.sum() signed_weights = weights * 
+        np.sign(corr_values)
+        
+        self.basket_symbols = symbols 
+        self.basket_weights = signed_weights.tolist() 
+        self.last_rebalance = datetime.utcnow()
+        
+        self.logger.info(f"Basket built: {symbols}") 
+        self.logger.info(f"Weights: {signed_weights}")
+        
+        return True def should_rebalance(self) -> bool: 
+        time_since_rebalance = datetime.utcnow() - 
+        self.last_rebalance return 
+        time_since_rebalance.total_seconds() >= 
+        config.REBALANCE_HOURS * 3600
+    def get_basket_info(self) -> Tuple[List[str], 
+    List[float]]:
+        return self.basket_symbols, self.basket_weights 
+    def get_current_basket_price(self) -> 
+    Optional[float]:
+        if not self.basket_symbols: return None
+            
+        prices = [] for symbol in self.basket_symbols: 
+            try:
+                ticker = 
+                exchange.fetch_tickers([symbol]) price 
+                = ticker[symbol]['last'] 
+                prices.append(float(price))
+            except Exception as e: 
+                self.logger.error(f"Error fetching 
+                price for {symbol}: {e}") return None
+        
+        if len(prices) != len(self.basket_symbols): 
+            return None
+            
+        basket_price = np.dot(self.basket_weights, 
+        prices) return float(basket_price)
+# Global basket manager instance
+basket_manager = BasketManager()
+
+
+===== config.py =====
+
+
+import os from dataclasses import dataclass @dataclass 
+class TradingConfig:
+    # Exchange Settings
+    EXCHANGE_ID: str = "okx" TARGET_PAIR: str = 
+    "SOL-USDT-SWAP" BASKET_SIZE: int = 4 TIMEFRAME: str 
+    = "5m" LOOKBACK: int = 120 REFRESH_INTERVAL: int = 
+    60
+    
+    # Strategy Parameters
+    Z_ENTER: float = 2.0 Z_EXIT: float = 0.7 
+    MAX_Z_STOP: float = 4.0
+    
+    # Basket Settings
+    TOP_BY_VOLUME: int = 30 MIN_VOLUME_FILTER: float = 
+    1000000.0 REBALANCE_HOURS: int = 6
+    
+    # Risk Management
+    MAX_POSITION_SIZE: float = 1000.0 ENABLE_STOP_LOSS: 
+    bool = True LEVERAGE: int = 3
+    
+    # OKX API Configuration
+    OKX_API_KEY: str = os.getenv("OKX_API_KEY", "") 
+    OKX_SECRET_KEY: str = os.getenv("OKX_SECRET_KEY", 
+    "") OKX_PASSPHRASE: str = 
+    os.getenv("OKX_PASSPHRASE", "")
+    
+    # Trading Settings
+    MARKET_TYPE: str = "swap" # spot, swap, future 
+    MARGIN_MODE: str = "cross" # isolated, cross
+    
+    # Telegram Configuration
+    TELEGRAM_BOT_TOKEN: str = 
+    os.getenv("TELEGRAM_BOT_TOKEN", "") 
+    TELEGRAM_CHAT_ID: str = 
+    os.getenv("TELEGRAM_CHAT_ID", "") TELEGRAM_ENABLED: 
+    bool = True
+    
+    # Symbol Configuration
+    FUTURES_SUFFIX: str = "-SWAP" SPOT_SUFFIX: str = 
+    "/USDT"
+    
+    def validate(self): if self.Z_ENTER <= self.Z_EXIT: 
+            raise ValueError("Z_ENTER must be greater 
+            than Z_EXIT")
+        if self.BASKET_SIZE < 2: raise 
+            ValueError("BASKET_SIZE must be at least 
+            2")
+        if self.LOOKBACK < 20: raise 
+            ValueError("LOOKBACK must be at least 20")
+        if not self.OKX_API_KEY: raise 
+            ValueError("OKX_API_KEY is required")
+        if self.LEVERAGE < 1 or self.LEVERAGE > 100: 
+            raise ValueError("LEVERAGE must be between 
+            1 and 100")
+config = TradingConfig()
+
+
+===== exchange.py =====
+
+
+import ccxt import logging from typing import Dict, 
+List, Optional from config import config class 
+OKXExchange:
+    def __init__(self): self.logger = 
+        logging.getLogger(__name__) self.exchange = 
+        self._initialize_exchange() self.markets = None 
+        self.load_markets()
+        
+    def _initialize_exchange(self) -> ccxt.Exchange: 
+        exchange_config = {
+            'apiKey': config.OKX_API_KEY, 'secret': 
+            config.OKX_SECRET_KEY, 'password': 
+            config.OKX_PASSPHRASE, 'sandbox': False, 
+            'enableRateLimit': True, 'options': {
+                'defaultType': config.MARKET_TYPE,
+            }
+        }
+        
+        return ccxt.okx(exchange_config)
+    
+    def load_markets(self) -> None: try: self.markets = 
+            self.exchange.load_markets() 
+            self.logger.info("Markets loaded 
+            successfully")
+        except Exception as e: 
+            self.logger.error(f"Error loading markets: 
+            {e}") raise
+    
+    def get_swap_symbols(self) -> List[str]: symbols = 
+        [] for symbol, market in self.markets.items():
+            if (market['swap'] and market['active'] and 
+                symbol.endswith(config.FUTURES_SUFFIX)): 
+                symbols.append(symbol)
+        return symbols
+    
+    def fetch_tickers(self, symbols: List[str] = None) 
+    -> Dict:
+        try: if symbols: return 
+                self.exchange.fetch_tickers(symbols)
+            return self.exchange.fetch_tickers() except 
+        Exception as e:
+            self.logger.error(f"Error fetching tickers: 
+            {e}") return {}
+    
+    def fetch_ohlcv(self, symbol: str, timeframe: str = 
+    None, limit: int = None) -> List:
+        try: tf = timeframe or config.TIMEFRAME lim = 
+            limit or config.LOOKBACK return 
+            self.exchange.fetch_ohlcv(symbol, 
+            timeframe=tf, limit=lim)
+        except Exception as e: 
+            self.logger.error(f"Error fetching OHLCV 
+            for {symbol}: {e}") return []
+    
+    def fetch_balance(self) -> Dict: try: return 
+            self.exchange.fetch_balance()
+        except Exception as e: 
+            self.logger.error(f"Error fetching balance: 
+            {e}") return {}
+    
+    def set_leverage(self, symbol: str, leverage: int) 
+    -> bool:
+        try: self.exchange.set_leverage(leverage, 
+            symbol) self.logger.info(f"Leverage set to 
+            {leverage} for {symbol}") return True
+        except Exception as e: 
+            self.logger.error(f"Error setting leverage 
+            for {symbol}: {e}") return False
+    
+    def create_order(self, symbol: str, order_type: 
+    str, side: str, amount: float, price: float = None) 
+    -> Dict:
+        try: order_params = { 'symbol': symbol, 'type': 
+                order_type, 'side': side, 'amount': 
+                amount,
+            }
+            
+            if price: order_params['price'] = price
+            
+            return 
+            self.exchange.create_order(**order_params)
+        except Exception as e: 
+            self.logger.error(f"Error creating order 
+            for {symbol}: {e}") return {}
+    
+    def get_positions(self, symbol: str = None) -> 
+    List[Dict]:
+        try: positions = 
+            self.exchange.fetch_positions([symbol] if 
+            symbol else None) return [pos for pos in 
+            positions if pos['contracts'] > 0]
+        except Exception as e: 
+            self.logger.error(f"Error fetching 
+            positions: {e}") return []
+    
+    def close_position(self, symbol: str) -> bool: try: 
+            positions = self.get_positions(symbol) if 
+            not positions:
+                return True
+                
+            for position in positions: side = 'sell' if 
+                position['side'] == 'long' else 'buy' 
+                self.create_order(
+                    symbol=symbol, order_type='market', 
+                    side=side, 
+                    amount=abs(position['contracts'])
+                ) return True except Exception as e: 
+            self.logger.error(f"Error closing position 
+            for {symbol}: {e}") return False
+# Global exchange instance
+exchange = OKXExchange()
+
+
+===== main.py =====
+
+
+import logging
+import time
+import sys
+from datetime import datetime
+
+from config import config
+from exchange import exchange
+from basket_manager import basket_manager
+from signal_generator import signal_generator
+from position_manager import position_manager
+from telegram_notifier import telegram
+from utils import setup_logging
+
+
+class BasketTradingBot:
+    def __init__(self):
+        self.logger = setup_logging()
+        self.running = False
+
+    def initialize(self):
+        try:
+            config.validate()
+            self.logger.info("Configuration validated")
+
+            if not basket_manager.build_basket():
+                self.logger.error("Failed to build initial basket")
+                return False
+
+            telegram.system_start()
+            self.logger.info("System initialized successfully")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Initialization failed: {e}")
+            telegram.error_alert(f"Initialization failed: {e}")
+            return False
+
+    def run(self):
+        self.running = True
+        self.logger.info("Starting main trading loop")
+
+        iteration = 0
+
+        while self.running:
+            try:
+                iteration += 1
+                self._process_iteration(iteration)
+                time.sleep(config.REFRESH_INTERVAL)
+
+            except KeyboardInterrupt:
+                self.logger.info("Received interrupt signal, shutting down")
+                break
+            except Exception as e:
+                self.logger.error(f"Error in main loop: {e}")
+                time.sleep(config.REFRESH_INTERVAL)
+
+    def _process_iteration(self, iteration):
+        self._check_rebalance()
+
+        z_score, ratio, mean, std = signal_generator.calculate_current_zscore()
+        if z_score is None:
+            self.logger.warning("Failed to calculate Z-score")
+            return
+
+        signal = signal_generator.generate_signal()
+        self._handle_signal(signal, z_score, ratio)
+
+        self._log_status(iteration, z_score, ratio, signal)
+
+    def _check_rebalance(self):
+        if basket_manager.should_rebalance():
+            self.logger.info("Rebalancing basket...")
+            if basket_manager.build_basket():
+                self.logger.info("Basket rebalanced successfully")
+            else:
+                self.logger.error("Basket rebalance failed")
+
+    def _handle_signal(self, signal, z_score, ratio):
+        if signal == "NO_SIGNAL":
+            return
+
+        if signal in ["SHORT_TARGET_LONG_BASKET", "LONG_TARGET_SHORT_BASKET"]:
+            if not position_manager.is_position_open():
+                if position_manager.open_position(signal, z_score):
+                    telegram.signal_alert(signal, z_score, ratio)
+                    self.logger.info(f"Position opened: {signal}")
+
+        elif signal == "EXIT_POSITION":
+            if position_manager.is_position_open():
+                position_info = position_manager.get_position_info()
+                pnl = z_score - position_info["entry_zscore"]
+
+                if position_manager.close_position():
+                    telegram.position_closed(pnl, position_info["duration"])
+                    self.logger.info(f"Position closed with PnL: {pnl:.2f}bps")
+
+        if signal_generator.is_stop_loss_triggered():
+            if position_manager.is_position_open():
+                self.logger.warning("Stop loss triggered, closing position")
+                position_manager.close_position()
+
+    def _log_status(self, iteration, z_score, ratio, signal):
+        if iteration % 10 == 0:
+            position_status = "OPEN" if position_manager.is_position_open() else "CLOSED"
+            self.logger.info(
+                f"Iteration: {iteration} | "
+                f"Z-score: {z_score:.2f} | "
+                f"Ratio: {ratio:.6f} | "
+                f"Signal: {signal} | "
+                f"Position: {position_status}"
+            )
+
+    def shutdown(self):
+        self.running = False
+        self.logger.info("Shutting down bot...")
+
+        if position_manager.is_position_open():
+            self.logger.info("Closing open positions before shutdown")
+            position_manager.close_position()
+
+
+def main():
+    bot = BasketTradingBot()
+
+    if not bot.initialize():
+        sys.exit(1)
+
+    try:
+        bot.run()
+    except Exception as e:
+        bot.logger.error(f"Fatal error: {e}")
+        telegram.error_alert(f"Fatal error: {e}")
+    finally:
+        bot.shutdown()
+
+
+if __name__ == "__main__":
+    main()
+
+
+===== position_manager.py =====
+
+
+import logging from typing import Dict, Optional from 
+datetime import datetime from config import config from 
+exchange import exchange class PositionManager:
+    def __init__(self): self.logger = 
+        logging.getLogger(__name__) 
+        self.current_position = None self.entry_time = 
+        None self.entry_zscore = 0.0
+        
+    def open_position(self, signal_type: str, z_score: 
+    float) -> bool:
+        if self.current_position is not None: 
+            self.logger.warning("Position already open, 
+            cannot open new position") return False
+            
+        try: self._set_leverage()
+            
+            if signal_type == 
+            "SHORT_TARGET_LONG_BASKET":
+                success = 
+                self._open_short_target_long_basket()
+            elif signal_type == 
+            "LONG_TARGET_SHORT_BASKET":
+                success = 
+                self._open_long_target_short_basket()
+            else: self.logger.error(f"Invalid signal 
+                type: {signal_type}") return False
+                
+            if success: self.current_position = 
+                signal_type self.entry_time = 
+                datetime.utcnow() self.entry_zscore = 
+                z_score self.logger.info(f"Position 
+                opened: {signal_type} at Z-score: 
+                {z_score:.2f}") return True
+            else: return False
+                
+        except Exception as e: 
+            self.logger.error(f"Error opening position: 
+            {e}") return False
+    def close_position(self) -> bool: if 
+        self.current_position is None:
+            self.logger.warning("No position to close") 
+            return True
+            
+        try: success = True
+            
+            success &= 
+            exchange.close_position(config.TARGET_PAIR)
+            
+            from basket_manager import basket_manager 
+            basket_symbols, _ = 
+            basket_manager.get_basket_info() for symbol 
+            in basket_symbols:
+                success &= 
+                exchange.close_position(symbol)
+                
+            if success: self.logger.info("All positions 
+                closed successfully") 
+                self.current_position = None 
+                self.entry_time = None 
+                self.entry_zscore = 0.0 return True
+            else: self.logger.error("Failed to close 
+                some positions") return False
+                
+        except Exception as e: 
+            self.logger.error(f"Error closing position: 
+            {e}") return False
+    def _set_leverage(self) -> None: try: 
+            exchange.set_leverage(config.TARGET_PAIR, 
+            config.LEVERAGE)
+            
+            from basket_manager import basket_manager 
+            basket_symbols, _ = 
+            basket_manager.get_basket_info() for symbol 
+            in basket_symbols:
+                exchange.set_leverage(symbol, 
+                config.LEVERAGE)
+                
+        except Exception as e: 
+            self.logger.warning(f"Error setting 
+            leverage: {e}")
+    def _open_short_target_long_basket(self) -> bool: 
+        try:
+            success = True
+            
+            success &= 
+            self._place_order(config.TARGET_PAIR, 
+            'sell', config.MAX_POSITION_SIZE)
+            
+            from basket_manager import basket_manager 
+            basket_symbols, basket_weights = 
+            basket_manager.get_basket_info()
+            
+            for i, symbol in enumerate(basket_symbols): 
+                weight = basket_weights[i] if weight > 
+                0:
+                    size = config.MAX_POSITION_SIZE * 
+                    abs(weight) success &= 
+                    self._place_order(symbol, 'buy', 
+                    size)
+                else: size = config.MAX_POSITION_SIZE * 
+                    abs(weight) success &= 
+                    self._place_order(symbol, 'sell', 
+                    size)
+                    
+            return success
+            
+        except Exception as e: 
+            self.logger.error(f"Error opening short 
+            target long basket: {e}") return False
+    def _open_long_target_short_basket(self) -> bool: 
+        try:
+            success = True
+            
+            success &= 
+            self._place_order(config.TARGET_PAIR, 
+            'buy', config.MAX_POSITION_SIZE)
+            
+            from basket_manager import basket_manager 
+            basket_symbols, basket_weights = 
+            basket_manager.get_basket_info()
+            
+            for i, symbol in enumerate(basket_symbols): 
+                weight = basket_weights[i] if weight > 
+                0:
+                    size = config.MAX_POSITION_SIZE * 
+                    abs(weight) success &= 
+                    self._place_order(symbol, 'sell', 
+                    size)
+                else: size = config.MAX_POSITION_SIZE * 
+                    abs(weight) success &= 
+                    self._place_order(symbol, 'buy', 
+                    size)
+                    
+            return success
+            
+        except Exception as e: 
+            self.logger.error(f"Error opening long 
+            target short basket: {e}") return False
+    def _place_order(self, symbol: str, side: str, 
+    size: float) -> bool:
+        try: order = exchange.create_order( 
+                symbol=symbol, order_type='market', 
+                side=side, amount=size
+            ) return order is not None and 'id' in 
+            order
+        except Exception as e: 
+            self.logger.error(f"Error placing order for 
+            {symbol}: {e}") return False
+    def get_position_info(self) -> Dict: if 
+        self.current_position is None:
+            return {}
+            
+        duration = "" if self.entry_time: duration = 
+            str(datetime.utcnow() - self.entry_time)
+            
+        return { 'type': self.current_position, 
+            'entry_time': self.entry_time, 
+            'entry_zscore': self.entry_zscore, 
+            'duration': duration
+        }
+    def is_position_open(self) -> bool: return 
+        self.current_position is not None
+# Global position manager instance
+position_manager = PositionManager()
+
+
+===== signal_generator.py =====
+
+
+import logging
+import numpy as np
+from typing import Tuple, Optional
+from datetime import datetime
+from config import config
+from exchange import exchange
+from basket_manager import basket_manager
+
+class SignalGenerator:
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        self.spread_history = []
+        self.current_zscore = 0.0
+        self.current_ratio = 0.0
+        
+    def calculate_spread_series(self) -> Optional[np.ndarray]:
+        target_prices = self._fetch_ohlcv_data(config.TARGET_PAIR)
+        if target_prices is None:
+            return None
+            
+        basket_symbols, basket_weights = basket_manager.get_basket_info()
+        if not basket_symbols:
+            return None
+            
+        basket_series = []
+        for symbol in basket_symbols:
+            symbol_prices = self._fetch_ohlcv_data(symbol)
+            if symbol_prices is None:
+                return None
+            basket_series.append(symbol_prices)
+        
+        min_length = min(len(target_prices), *[len(s) for s in basket_series])
+        if min_length < 10:
+            return None
+        
+        target_aligned = target_prices[-min_length:]
+        basket_matrix = np.array([s[-min_length:] for s in basket_series])
+        
+        weights = np.array(basket_weights)
+        weights = weights / np.sum(np.abs(weights))
+        basket_prices = np.dot(weights, basket_matrix)
+        
+        spread_series = target_aligned / basket_prices
+        return spread_series
+
+    def _fetch_ohlcv_data(self, symbol: str) -> Optional[np.ndarray]:
+        try:
+            ohlcv = exchange.fetch_ohlcv(symbol, limit=config.LOOKBACK)
+            if not ohlcv:
+                return None
+            closes = [candle[4] for candle in ohlcv]
+            return np.array(closes, dtype=np.float64)
+        except Exception as e:
+            self.logger.error(f"Error fetching data for {symbol}: {e}")
+            return None
+
+    def calculate_current_zscore(self) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
+        spread_series = self.calculate_spread_series()
+        if spread_series is None:
+            return None, None, None, None
+            
+        current_prices = self._get_current_prices()
+        if current_prices is None:
+            return None, None, None, None
+            
+        basket_price = self._calculate_current_basket_price(current_prices)
+        if basket_price is None:
+            return None, None, None, None
+        
+        current_ratio = current_prices[config.TARGET_PAIR] / basket_price
+        spread_mean = np.mean(spread_series)
+        spread_std = np.std(spread_series)
+        
+        if spread_std < 1e-12:
+            return None, None, None, None
+        
+        z_score = (current_ratio - spread_mean) / spread_std
+        
+        self.current_zscore = z_score
+        self.current_ratio = current_ratio
+        
+        return z_score, current_ratio, spread_mean, spread_std
+
+    def _get_current_prices(self) -> Optional[dict]:
+        symbols = [config.TARGET_PAIR] + basket_manager.basket_symbols
+        try:
+            tickers = exchange.fetch_tickers(symbols)
+            prices = {}
+            for symbol in symbols:
+                if symbol in tickers:
+                    prices[symbol] = float(tickers[symbol]['last'])
+                else:
+                    return None
+            return prices
+        except Exception as e:
+            self.logger.error(f"Error fetching current prices: {e}")
+            return None
+
+    def _calculate_current_basket_price(self, prices: dict) -> Optional[float]:
+        basket_symbols, basket_weights = basket_manager.get_basket_info()
+        if not basket_symbols:
+            return None
+            
+        basket_price = 0
+        for i, symbol in enumerate(basket_symbols):
+            if symbol in prices:
+                weight = basket_weights[i]
+                basket_price += weight * prices[symbol]
+            else:
+                return None
+                
+        return basket_price
+
+    def generate_signal(self) -> str:
+        z_score, ratio, mean, std = self.calculate_current_zscore()
+        if z_score is None:
+            return "NO_SIGNAL"
+        
+        if abs(z_score) >= config.Z_ENTER:
+            if z_score > 0:
+                return "SHORT_TARGET_LONG_BASKET"
+            else:
+                return "LONG_TARGET_SHORT_BASKET"
+                
+        elif abs(z_score) <= config.Z_EXIT:
+            return "EXIT_POSITION"
+            
+        return "NO_SIGNAL"
+
+    def get_current_metrics(self) -> Tuple[float, float, float, float]:
+        return self.current_zscore, self.current_ratio, 0.0, 0.0
+
+    def is_stop_loss_triggered(self) -> bool:
+        return abs(self.current_zscore) >= config.MAX_Z_STOP
+
+# Global signal generator instance
+signal_generator = SignalGenerator()
+
+
+===== telegram_notifier.py =====
+
+
+import logging
+import requests
+from typing import Optional
+from config import config
+
+class TelegramNotifier:
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        self.bot_token = config.TELEGRAM_BOT_TOKEN
+        self.chat_id = config.TELEGRAM_CHAT_ID
+        self.enabled = config.TELEGRAM_ENABLED and self.bot_token and self.chat_id
+        
+        if self.enabled:
+            self.logger.info("Telegram notifier initialized")
+        else:
+            self.logger.warning("Telegram notifier disabled - check token and chat_id")
+    
+    def send_message(self, message: str) -> bool:
+        if not self.enabled:
+            return False
+            
+        try:
+            url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
+            payload = {
+                'chat_id': self.chat_id,
+                'text': message,
+                'parse_mode': 'HTML'
+            }
+            
+            response = requests.post(url, json=payload, timeout=10)
+            return response.status_code == 200
+            
+        except Exception as e:
+            self.logger.error(f"Error sending Telegram message: {e}")
+            return False
+    
+    def signal_alert(self, signal_type: str, z_score: float, ratio: float) -> bool:
+        message = (
+            f"TRADING SIGNAL\n"
+            f"Type: {signal_type}\n"
+            f"Z-Score: {z_score:.2f}\n"
+            f"Ratio: {ratio:.6f}\n"
+            f"Pair: {config.TARGET_PAIR}"
+        )
+        return self.send_message(message)
+    
+    def position_closed(self, pnl: float, duration: str) -> bool:
+        message = (
+            f"POSITION CLOSED\n"
+            f"PnL: {pnl:.2f}bps\n"
+            f"Duration: {duration}\n"
+            f"Pair: {config.TARGET_PAIR}"
+        )
+        return self.send_message(message)
+    
+    def error_alert(self, error_msg: str) -> bool:
+        message = (
+            f"SYSTEM ERROR\n"
+            f"Error: {error_msg}\n"
+            f"Pair: {config.TARGET_PAIR}"
+        )
+        return self.send_message(message)
+    
+    def system_start(self) -> bool:
+        message = (
+            f"SYSTEM STARTED\n"
+            f"Target: {config.TARGET_PAIR}\n"
+            f"Basket Size: {config.BASKET_SIZE}\n"
+            f"Z-Enter: {config.Z_ENTER}\n"
+            f"Z-Exit: {config.Z_EXIT}"
+        )
+        return self.send_message(message)
+
+# Global notifier instance
+telegram = TelegramNotifier()
+
+
+===== utils.py =====
+
+
+# utils.py
+from config import CAPITAL, RISK_PERCENT def 
+calculate_position(entry_price, stop_loss_price):
+    """ Calculate position size based on risk 
+    management. """ risk_amount = CAPITAL * 
+    (RISK_PERCENT / 100) price_diff = abs(entry_price - 
+    stop_loss_price) if price_diff == 0:
+        raise ValueError("Stop-loss cannot be zero") 
+    size = risk_amount / price_diff position_info = (
+        f"Capital: {CAPITAL} USDT\n" f"Risk: 
+        {RISK_PERCENT}% = {risk_amount:.2f} USDT\n" 
+        f"Position size: {size:.4f} units"
+    ) print(position_info) return size, position_info
