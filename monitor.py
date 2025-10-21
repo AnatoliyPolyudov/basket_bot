@@ -4,22 +4,21 @@ import numpy as np
 import time
 import logging
 from datetime import datetime
-from observer import Subject  # <-- добавлено
+from observer import Subject  # Observer integration
 
-# Logging setup
+# Logging setup — только вывод в консоль
 logging.basicConfig(
     level=logging.INFO,
     format="%(message)s",
     handlers=[
-        logging.FileHandler("okx_basket_monitor.log"),
-        logging.StreamHandler()
+        logging.StreamHandler()  # убрали FileHandler
     ]
 )
 logger = logging.getLogger(__name__)
 
-class OKXBasketMonitor(Subject):  # <-- наследуемся от Subject
+class OKXBasketMonitor(Subject):
     def __init__(self):
-        super().__init__()  # <-- инициализация Subject
+        super().__init__()
         self.exchange = ccxt.okx({
             "enableRateLimit": True,
             "options": {"defaultType": "swap"},
@@ -36,7 +35,6 @@ class OKXBasketMonitor(Subject):  # <-- наследуемся от Subject
         self.historical_data = {}
         self.lookback_days = 30
 
-    # --- остальной код без изменений ---
     def fetch_historical_data(self):
         logger.info("Fetching historical data from OKX...")
         for symbol in [self.target] + self.basket_symbols:
@@ -182,7 +180,7 @@ Status: {"NORMAL" if abs(z) < 0.5 else "WATCH" if abs(z) < 2 else "SIGNAL"}
 """
                     print(report)
 
-                    # <-- вот здесь уведомляем всех наблюдателей
+                    # Notify observers
                     self.notify({
                         "time": datetime.utcnow(),
                         "target_price": prices[self.target],
