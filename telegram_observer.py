@@ -1,37 +1,12 @@
 from observer import Observer
 from telegram import Bot
-import asyncio
-import threading
 from datetime import datetime
-import time
+import asyncio
 
 class TelegramObserver(Observer):
     def __init__(self, token: str, chat_id: str):
         self.bot = Bot(token=token)
         self.chat_id = chat_id
-        self.queue = asyncio.Queue()
-
-        # Запускаем отдельный поток с собственным event loop
-        self.loop = asyncio.new_event_loop()
-        t = threading.Thread(target=self._start_loop, daemon=True)
-        t.start()
-
-        # Даем loop время стартовать
-        time.sleep(0.5)
-
-    def _start_loop(self):
-        asyncio.set_event_loop(self.loop)
-        self.loop.create_task(self._worker())
-        self.loop.run_forever()
-
-    async def _worker(self):
-        while True:
-            msg = await self.queue.get()
-            try:
-                await self.bot.send_message(chat_id=self.chat_id, text=msg)
-            except Exception as e:
-                print(f"Failed to send Telegram message: {e}")
-            self.queue.task_done()
 
     def update(self, data):
         msg = (
@@ -42,6 +17,9 @@ class TelegramObserver(Observer):
             f"Basket Price: {data['basket_price']:.2f}\n"
             f"Target Price: {data['target_price']:.2f}"
         )
-        # Добавляем сообщение в очередь Telegram
-        self.loop.call_soon_threadsafe(self.queue.put_nowait, msg)
-        print(f"Queued message for Telegram: {msg[:50]}...")
+        # Отправляем сообщение синхронно через asyncio.run
+        try:
+            asyncio.run(self.bot.send_message(chat_id=self.chat_id, text=msg))
+            print(f"✅ Telegram message sent: {msg[:50]}...")
+        except Exception as e:
+            print(f"❌ Failed to send Telegram message: {e}")
