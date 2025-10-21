@@ -193,6 +193,18 @@ def main():
     )
     monitor.attach(telegram_observer)
 
+    # Тестовое сообщение сразу при старте
+    monitor.notify({
+        "time": None,
+        "target_price": 0,
+        "basket_price": 0,
+        "spread": 0,
+        "mean": 0,
+        "std": 0,
+        "z": 0,
+        "signal": "TEST MESSAGE — TelegramObserver работает!"
+    })
+
     monitor.run(interval_minutes=5)
 
 if __name__ == "__main__":
