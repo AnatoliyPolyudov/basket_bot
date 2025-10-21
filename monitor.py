@@ -194,7 +194,7 @@ def main():
     monitor.attach(telegram_observer)
 
     # Тестовое сообщение сразу при старте
-    monitor.notify({
+    telegram_observer.update({
         "time": None,
         "target_price": 0,
         "basket_price": 0,
