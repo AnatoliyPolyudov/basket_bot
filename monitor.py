@@ -1,15 +1,15 @@
-# monitor.py
 import ccxt
 import pandas as pd
 import numpy as np
 import time
 import logging
 from datetime import datetime
+from observer import Subject  # <-- добавлено
 
-# Logging setup (clean text only)
+# Logging setup
 logging.basicConfig(
     level=logging.INFO,
-    format="%(message)s",  # Только текст
+    format="%(message)s",
     handlers=[
         logging.FileHandler("okx_basket_monitor.log"),
         logging.StreamHandler()
@@ -17,8 +17,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-class OKXBasketMonitor:
+class OKXBasketMonitor(Subject):  # <-- наследуемся от Subject
     def __init__(self):
+        super().__init__()  # <-- инициализация Subject
         self.exchange = ccxt.okx({
             "enableRateLimit": True,
             "options": {"defaultType": "swap"},
@@ -35,6 +36,7 @@ class OKXBasketMonitor:
         self.historical_data = {}
         self.lookback_days = 30
 
+    # --- остальной код без изменений ---
     def fetch_historical_data(self):
         logger.info("Fetching historical data from OKX...")
         for symbol in [self.target] + self.basket_symbols:
@@ -179,6 +181,19 @@ Signal: {signal}
 Status: {"NORMAL" if abs(z) < 0.5 else "WATCH" if abs(z) < 2 else "SIGNAL"}
 """
                     print(report)
+
+                    # <-- вот здесь уведомляем всех наблюдателей
+                    self.notify({
+                        "time": datetime.utcnow(),
+                        "target_price": prices[self.target],
+                        "basket_price": self.calculate_basket_price(prices),
+                        "spread": spread,
+                        "mean": mean,
+                        "std": std,
+                        "z": z,
+                        "signal": signal
+                    })
+
                 else:
                     logger.warning("Z-score unavailable.")
                 time.sleep(interval_minutes * 60)
