@@ -183,8 +183,6 @@ Status: {"NORMAL" if abs(z)<0.5 else "WATCH" if abs(z)<2 else "SIGNAL"}
 
 
 def main():
-    import time
-
     monitor = OKXBasketMonitor()
 
     console_observer = ConsoleObserver()
@@ -197,22 +195,24 @@ def main():
     monitor.attach(telegram_observer)
 
     # --- Тестовое сообщение при старте ---
-    telegram_observer.update({
-        "time": None,
-        "target_price": 0,
-        "basket_price": 0,
-        "spread": 0,
-        "mean": 0,
-        "std": 0,
-        "z": 0,
-        "signal": "TEST MESSAGE — TelegramObserver работает!"
-    })
-    time.sleep(1)  # даем очередь обработаться
-    # ------------------------------------
+    try:
+        telegram_observer.update({
+            "time": None,
+            "target_price": 0,
+            "basket_price": 0,
+            "spread": 0,
+            "mean": 0,
+            "std": 0,
+            "z": 0,
+            "signal": "✅ Test message: TelegramObserver работает!"
+        })
+        print("✅ Test message queued for Telegram")
+    except Exception as e:
+        print("❌ Failed to queue test message:", e)
+    # -----------------------------------
 
     monitor.run(interval_minutes=5)
 
 
 if __name__ == "__main__":
     main()
-
