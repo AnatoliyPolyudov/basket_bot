@@ -181,7 +181,10 @@ Status: {"NORMAL" if abs(z)<0.5 else "WATCH" if abs(z)<2 else "SIGNAL"}
                 logger.warning(f"Error in loop: {e}")
                 time.sleep(60)
 
+
 def main():
+    import time
+
     monitor = OKXBasketMonitor()
 
     console_observer = ConsoleObserver()
@@ -193,7 +196,7 @@ def main():
     )
     monitor.attach(telegram_observer)
 
-    # Тестовое сообщение сразу при старте
+    # --- Тестовое сообщение при старте ---
     telegram_observer.update({
         "time": None,
         "target_price": 0,
@@ -204,8 +207,11 @@ def main():
         "z": 0,
         "signal": "TEST MESSAGE — TelegramObserver работает!"
     })
+    time.sleep(1)  # даем очередь обработаться
+    # ------------------------------------
 
     monitor.run(interval_minutes=5)
+
 
 if __name__ == "__main__":
     main()
