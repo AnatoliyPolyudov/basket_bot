@@ -1,9 +1,8 @@
-# telegram_observer.py
 from observer import Observer
 from telegram import Bot
 import asyncio
-from datetime import datetime
 import threading
+from datetime import datetime
 
 class TelegramObserver(Observer):
     def __init__(self, token: str, chat_id: str):
@@ -11,7 +10,7 @@ class TelegramObserver(Observer):
         self.chat_id = chat_id
         self.queue = asyncio.Queue()
 
-        # Запускаем loop в отдельном потоке
+        # Запускаем отдельный поток с собственным event loop
         self.loop = asyncio.new_event_loop()
         t = threading.Thread(target=self._start_loop, daemon=True)
         t.start()
@@ -39,5 +38,5 @@ class TelegramObserver(Observer):
             f"Basket Price: {data['basket_price']:.2f}\n"
             f"Target Price: {data['target_price']:.2f}"
         )
-        # Добавляем сообщение в очередь
+        # Добавляем сообщение в очередь Telegram
         self.loop.call_soon_threadsafe(self.queue.put_nowait, msg)
