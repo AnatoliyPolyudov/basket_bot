@@ -198,6 +198,7 @@ Status: {"NORMAL" if abs(z)<0.5 else "WATCH" if abs(z)<2 else "SIGNAL"}
                 logger.warning(f"Error in loop: {e}")
                 time.sleep(60)
 
+
 def main():
     monitor = OKXBasketMonitor()
 
@@ -210,19 +211,25 @@ def main():
     )
     monitor.attach(telegram_observer)
 
-    # Тестовое сообщение сразу при старте
-    telegram_observer.update({
-        "time": None,
-        "target_price": 0,
-        "basket_price": 0,
-        "spread": 0,
-        "mean": 0,
-        "std": 0,
-        "z": 0,
-        "signal": "TEST MESSAGE — TelegramObserver работает!"
-    })
+    # --- Тестовое сообщение при старте ---
+    try:
+        telegram_observer.update({
+            "time": None,
+            "target_price": 0,
+            "basket_price": 0,
+            "spread": 0,
+            "mean": 0,
+            "std": 0,
+            "z": 0,
+            "signal": "✅ Test message: TelegramObserver работает!"
+        })
+        print("✅ Test message queued for Telegram")
+    except Exception as e:
+        print("❌ Failed to queue test message:", e)
+    # -----------------------------------
 
     monitor.run(interval_minutes=5)
+
 
 if __name__ == "__main__":
     main()
@@ -263,6 +270,7 @@ from telegram import Bot
 import asyncio
 import threading
 from datetime import datetime
+import time
 
 class TelegramObserver(Observer):
     def __init__(self, token: str, chat_id: str):
@@ -274,6 +282,9 @@ class TelegramObserver(Observer):
         self.loop = asyncio.new_event_loop()
         t = threading.Thread(target=self._start_loop, daemon=True)
         t.start()
+
+        # Даем loop время стартовать
+        time.sleep(0.5)
 
     def _start_loop(self):
         asyncio.set_event_loop(self.loop)
@@ -300,6 +311,7 @@ class TelegramObserver(Observer):
         )
         # Добавляем сообщение в очередь Telegram
         self.loop.call_soon_threadsafe(self.queue.put_nowait, msg)
+        print(f"Queued message for Telegram: {msg[:50]}...")
 
 
 ===== test_bot.py =====
