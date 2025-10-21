@@ -169,7 +169,9 @@ Status: {"NORMAL" if abs(z)<0.5 else "WATCH" if abs(z)<2 else "SIGNAL"}
                         "mean": mean,
                         "std": std,
                         "z": z,
-                        "signal": signal
+                        "signal": signal,
+                        "basket_symbols": self.basket_symbols,
+                        "basket_weights": self.basket_weights
                     })
                 else:
                     logger.warning("Z-score unavailable.")
