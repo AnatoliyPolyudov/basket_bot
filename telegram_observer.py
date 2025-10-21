@@ -3,15 +3,23 @@ from observer import Observer
 from telegram import Bot
 import asyncio
 from datetime import datetime
+import threading
 
 class TelegramObserver(Observer):
     def __init__(self, token: str, chat_id: str):
         self.bot = Bot(token=token)
         self.chat_id = chat_id
         self.queue = asyncio.Queue()
-        self.loop = asyncio.get_event_loop()
-        # Запускаем фоновую задачу для отправки сообщений
+
+        # Запускаем loop в отдельном потоке
+        self.loop = asyncio.new_event_loop()
+        t = threading.Thread(target=self._start_loop, daemon=True)
+        t.start()
+
+    def _start_loop(self):
+        asyncio.set_event_loop(self.loop)
         self.loop.create_task(self._worker())
+        self.loop.run_forever()
 
     async def _worker(self):
         while True:
@@ -31,5 +39,5 @@ class TelegramObserver(Observer):
             f"Basket Price: {data['basket_price']:.2f}\n"
             f"Target Price: {data['target_price']:.2f}"
         )
-        # Добавляем сообщение в очередь без блокировки
+        # Добавляем сообщение в очередь
         self.loop.call_soon_threadsafe(self.queue.put_nowait, msg)
