@@ -3,6 +3,7 @@ from telegram import Bot
 import asyncio
 import threading
 from datetime import datetime
+import time
 
 class TelegramObserver(Observer):
     def __init__(self, token: str, chat_id: str):
@@ -14,6 +15,9 @@ class TelegramObserver(Observer):
         self.loop = asyncio.new_event_loop()
         t = threading.Thread(target=self._start_loop, daemon=True)
         t.start()
+
+        # Даем loop время стартовать
+        time.sleep(0.5)
 
     def _start_loop(self):
         asyncio.set_event_loop(self.loop)
@@ -40,3 +44,4 @@ class TelegramObserver(Observer):
         )
         # Добавляем сообщение в очередь Telegram
         self.loop.call_soon_threadsafe(self.queue.put_nowait, msg)
+        print(f"Queued message for Telegram: {msg[:50]}...")
