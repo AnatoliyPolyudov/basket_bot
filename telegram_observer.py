@@ -1,4 +1,3 @@
-# telegram_observer.py
 from observer import Observer
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
@@ -58,12 +57,23 @@ class TelegramObserver(Observer):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Используем run_coroutine_threadsafe, чтобы безопасно вызвать асинхронный метод из синхронного потока
-        asyncio.run_coroutine_threadsafe(
-            self.app.bot.send_message(
-                chat_id=self.chat_id,
-                text=msg,
-                reply_markup=reply_markup
-            ),
-            self.app.loop
-        )
+        # --- безопасный вызов асинхронного метода из синхронного потока ---
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # Если уже есть работающий loop (например, в Jupyter или другом приложении)
+            loop.create_task(
+                self.app.bot.send_message(
+                    chat_id=self.chat_id,
+                    text=msg,
+                    reply_markup=reply_markup
+                )
+            )
+        else:
+            # Если нет запущенного loop — создаём временный
+            asyncio.run(
+                self.app.bot.send_message(
+                    chat_id=self.chat_id,
+                    text=msg,
+                    reply_markup=reply_markup
+                )
+            )
