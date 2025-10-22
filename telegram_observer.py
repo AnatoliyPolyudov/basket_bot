@@ -18,14 +18,11 @@ class TelegramObserver(Observer):
             f"Target Price: {data['target_price']:.2f}"
         )
 
-        # Кнопки под сообщением
+        # Две кнопки: открыть и закрыть
         keyboard = [
             [
-                InlineKeyboardButton("Войти", callback_data="execute"),
-                InlineKeyboardButton("Пропустить", callback_data="skip"),
-            ],
-            [
-                InlineKeyboardButton("Закрыть позиции", callback_data="exit"),
+                InlineKeyboardButton("Открыть", callback_data="open"),
+                InlineKeyboardButton("Закрыть", callback_data="close"),
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
