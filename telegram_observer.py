@@ -50,8 +50,8 @@ class TelegramObserver(Observer):
         if signal and signal != "NO DATA":
             buttons = [
                 [
-                    {'text': 'Open Position', 'callback_data': f'OPEN:{signal}'},
-                    {'text': 'Close Position', 'callback_data': f'CLOSE:{signal}'}
+                    {'text': 'Open', 'callback_data': f'OPEN:{signal}'},
+                    {'text': 'Close', 'callback_data': f'CLOSE:{signal}'}
                 ]
             ]
 
