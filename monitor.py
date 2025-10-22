@@ -15,6 +15,17 @@ import requests
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
+# Создаем отдельный логгер для красивого вывода
+console_logger = logging.StreamHandler()
+console_logger.setLevel(logging.INFO)
+formatter = logging.Formatter('%(message)s')
+console_logger.setFormatter(formatter)
+
+pretty_logger = logging.getLogger('pretty')
+pretty_logger.setLevel(logging.INFO)
+pretty_logger.addHandler(console_logger)
+pretty_logger.propagate = False
+
 class OKXBasketMonitor(Subject):
     def __init__(self):
         super().__init__()
@@ -55,9 +66,9 @@ class OKXBasketMonitor(Subject):
     def calculate_basket_weights(self):
         correlations, valid = [], []
         
-        print("🔍 " + "="*50)
-        print("🔍 АНАЛИЗ КОРРЕЛЯЦИЙ С BTC")
-        print("🔍 " + "="*50)
+        pretty_logger.info("🔍 " + "="*50)
+        pretty_logger.info("🔍 АНАЛИЗ КОРРЕЛЯЦИЙ С BTC")
+        pretty_logger.info("🔍 " + "="*50)
         
         for symbol in self.basket_symbols:
             if symbol in self.historical_data and self.target in self.historical_data:
@@ -84,9 +95,9 @@ class OKXBasketMonitor(Subject):
                             emoji, quality = "💤", "ОТСУТСТВУЕТ"
                         
                         direction = "прямая" if corr > 0 else "обратная"
-                        print(f"{emoji} {asset_name:6} | {corr:7.3f} | {corr_percent:5.1f}% | {quality:10} | {direction}")
+                        pretty_logger.info(f"{emoji} {asset_name:6} | {corr:7.3f} | {corr_percent:5.1f}% | {quality:10} | {direction}")
         
-        print("🔍 " + "="*50)
+        pretty_logger.info("🔍 " + "="*50)
         
         self.basket_symbols = valid
         if not correlations:
@@ -99,19 +110,19 @@ class OKXBasketMonitor(Subject):
         abs_corr = np.abs(correlations)
         self.basket_weights = abs_corr / np.sum(abs_corr)
         
-        print("🎯 " + "="*50)
-        print("🎯 ИТОГОВАЯ КОРЗИНА С ВЕСАМИ")
-        print("🎯 " + "="*50)
+        pretty_logger.info("🎯 " + "="*50)
+        pretty_logger.info("🎯 ИТОГОВАЯ КОРЗИНА С ВЕСАМИ")
+        pretty_logger.info("🎯 " + "="*50)
         
         total_corr = 0
         for s, w, c in zip(self.basket_symbols, self.basket_weights, correlations):
             asset_name = s.split('/')[0]
             total_corr += abs(c)
-            print(f"📊 {asset_name:6} | Вес: {w:6.3f} | Корр: {c:6.3f}")
+            pretty_logger.info(f"📊 {asset_name:6} | Вес: {w:6.3f} | Корр: {c:6.3f}")
         
         avg_correlation = total_corr / len(correlations)
-        print(f"📈 Средняя корреляция: {avg_correlation:.3f}")
-        print("🎯 " + "="*50)
+        pretty_logger.info(f"📈 Средняя корреляция: {avg_correlation:.3f}")
+        pretty_logger.info("🎯 " + "="*50)
 
     def get_current_prices(self):
         prices = {}
@@ -224,15 +235,23 @@ class OKXBasketMonitor(Subject):
 
                     # Красивый вывод Z-score в реальном времени
                     current_time = datetime.utcnow().strftime('%H:%M:%S')
-                    z_color = "🟢" if abs(z) < 1.0 else "🟡" if abs(z) < 2.0 else "🟠" if abs(z) < 3.0 else "🔴"
-                    print(f"{z_color} [{current_time}] Z-score: {z:6.2f} | Сигнал: {signal}")
+                    if abs(z) < 1.0:
+                        z_color = "🟢"
+                    elif abs(z) < 2.0:
+                        z_color = "🟡"
+                    elif abs(z) < 3.0:
+                        z_color = "🟠"
+                    else:
+                        z_color = "🔴"
+                    
+                    pretty_logger.info(f"{z_color} [{current_time}] Z-score: {z:6.2f} | Сигнал: {signal}")
 
                     if datetime.utcnow() - last_telegram_time >= timedelta(minutes=10):
                         self.notify(report_data)
                         last_telegram_time = datetime.utcnow()
                 else:
                     current_time = datetime.utcnow().strftime('%H:%M:%S')
-                    print(f"⚪ [{current_time}] Z-score: НЕТ ДАННЫХ")
+                    pretty_logger.info(f"⚪ [{current_time}] Z-score: НЕТ ДАННЫХ")
 
                 time.sleep(interval_minutes*60)
             except KeyboardInterrupt:
