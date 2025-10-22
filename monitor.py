@@ -161,7 +161,8 @@ Status: {"NORMAL" if abs(z)<0.5 else "WATCH" if abs(z)<2 else "SIGNAL"}
 """
                     print(report)
 
-                    self.notify({
+                    # --- Отладка: печатаем данные перед уведомлением ---
+                    data_to_notify = {
                         "time": datetime.utcnow(),
                         "target_price": prices[self.target],
                         "basket_price": self.calculate_basket_price(prices),
@@ -172,7 +173,10 @@ Status: {"NORMAL" if abs(z)<0.5 else "WATCH" if abs(z)<2 else "SIGNAL"}
                         "signal": signal,
                         "basket_symbols": self.basket_symbols,
                         "basket_weights": self.basket_weights
-                    })
+                    }
+                    print("Debug: notifying observers with data:", data_to_notify)
+
+                    self.notify(data_to_notify)
                 else:
                     logger.warning("Z-score unavailable.")
                 time.sleep(interval_minutes*60)
