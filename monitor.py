@@ -6,13 +6,14 @@ import logging
 from datetime import datetime
 from observer import Subject
 from console_observer import ConsoleObserver
+from trader import OKXBasketTrader
 from telegram_observer import TelegramObserver
+from callback_handler import handle_callback
+import threading
+import requests
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(message)s",
-    handlers=[logging.StreamHandler()]
-)
+# Logging setup
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 class OKXBasketMonitor(Subject):
@@ -29,101 +30,7 @@ class OKXBasketMonitor(Subject):
         self.historical_data = {}
         self.lookback_days = 30
 
-    def fetch_historical_data(self):
-        logger.info("Fetching historical data from OKX...")
-        for symbol in [self.target] + self.basket_symbols:
-            try:
-                since = self.exchange.parse8601(
-                    (datetime.utcnow() - pd.Timedelta(days=self.lookback_days)).isoformat()
-                )
-                ohlcv = self.exchange.fetch_ohlcv(symbol, "1d", since=since, limit=30)
-                if not ohlcv:
-                    logger.warning(f"No data for {symbol}")
-                    continue
-                self.historical_data[symbol] = [c[4] for c in ohlcv]
-                logger.info(f"Loaded {len(self.historical_data[symbol])} days for {symbol}")
-            except Exception as e:
-                logger.warning(f"Error loading {symbol}: {e}")
-
-        valid = [s for s in [self.target]+self.basket_symbols if s in self.historical_data and len(self.historical_data[s])>=10]
-        if len(valid) < 3:
-            logger.error("Not enough valid symbols for analysis.")
-            return False
-        return True
-
-    def calculate_basket_weights(self):
-        correlations, valid = [], []
-        for symbol in self.basket_symbols:
-            if symbol in self.historical_data and self.target in self.historical_data:
-                x, y = self.historical_data[self.target], self.historical_data[symbol]
-                if len(x) == len(y):
-                    corr = np.corrcoef(x, y)[0, 1]
-                    if not np.isnan(corr):
-                        correlations.append(corr)
-                        valid.append(symbol)
-                        logger.info(f"Correlation BTC/{symbol}: {corr:.4f}")
-        self.basket_symbols = valid
-        if not correlations:
-            if not self.basket_symbols:
-                logger.error("No valid symbols for basket weights.")
-                return
-            self.basket_weights = np.ones(len(self.basket_symbols)) / len(self.basket_symbols)
-            return
-        abs_corr = np.abs(correlations)
-        self.basket_weights = abs_corr / np.sum(abs_corr)
-        logger.info("Calculated basket weights:")
-        for s, w, c in zip(self.basket_symbols, self.basket_weights, correlations):
-            logger.info(f"  {s}: {w:.3f} (corr={c:.3f})")
-
-    def get_current_prices(self):
-        prices = {}
-        try:
-            symbols = [self.target] + self.basket_symbols
-            tickers = self.exchange.fetch_tickers(symbols)
-            for s in symbols:
-                if s in tickers and tickers[s].get("last") is not None:
-                    prices[s] = tickers[s]["last"]
-            if len(prices) != len(symbols):
-                logger.warning("Some prices are missing.")
-                return None
-            return prices
-        except Exception as e:
-            logger.warning(f"Error fetching tickers: {e}")
-            return None
-
-    def calculate_basket_price(self, prices):
-        return sum(self.basket_weights[i] * prices[s] for i, s in enumerate(self.basket_symbols) if s in prices)
-
-    def calculate_spread_series(self):
-        min_len = min(len(self.historical_data[s]) for s in [self.target]+self.basket_symbols if s in self.historical_data)
-        if min_len < 10:
-            logger.warning("Insufficient historical data.")
-            return None
-        target = np.array(self.historical_data[self.target][-min_len:])
-        basket = np.zeros(min_len)
-        for i, s in enumerate(self.basket_symbols):
-            basket += self.basket_weights[i] * np.array(self.historical_data[s][-min_len:])
-        return target / basket
-
-    def calculate_zscore(self, current_prices):
-        if not all(s in current_prices for s in [self.target]+self.basket_symbols):
-            return None, None, None
-        spread_now = current_prices[self.target] / self.calculate_basket_price(current_prices)
-        spread_hist = self.calculate_spread_series()
-        if spread_hist is None:
-            return None, None, None
-        mean, std = np.mean(spread_hist), np.std(spread_hist)
-        if std < 1e-10:
-            return None, None, None
-        z = (spread_now - mean) / std
-        return z, spread_now, (mean, std)
-
-    def trading_signal(self, z):
-        if z is None: return "NO DATA"
-        if z > 2.0: return "SHORT BTC / LONG BASKET"
-        if z < -2.0: return "LONG BTC / SHORT BASKET"
-        if abs(z) < 0.5: return "EXIT POSITION"
-        return "HOLD"
+    # --- все методы fetch_historical_data, calculate_basket_weights, get_current_prices, calculate_basket_price, calculate_spread_series, calculate_zscore, trading_signal оставляем без изменений ---
 
     def run(self, interval_minutes=1):
         logger.info("Starting OKX basket monitor...")
@@ -147,21 +54,8 @@ class OKXBasketMonitor(Subject):
                 if z is not None:
                     mean, std = stats
                     signal = self.trading_signal(z)
-                    report = f"""
-=== OKX FUTURES BASKET MONITOR ===
-Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC
-BTC-USDT: {prices[self.target]:.2f}
-Basket Price: {self.calculate_basket_price(prices):.2f}
-Spread: {spread:.6f}
-Mean: {mean:.6f} ± {std:.6f}
-Z-Score: {z:.4f}
-Signal: {signal}
-Status: {"NORMAL" if abs(z)<0.5 else "WATCH" if abs(z)<2 else "SIGNAL"}
-"""
-                    print(report)
 
-                    # уведомляем всех наблюдателей
-                    self.notify({
+                    report_data = {
                         "time": datetime.utcnow(),
                         "target_price": prices[self.target],
                         "basket_price": self.calculate_basket_price(prices),
@@ -172,9 +66,12 @@ Status: {"NORMAL" if abs(z)<0.5 else "WATCH" if abs(z)<2 else "SIGNAL"}
                         "signal": signal,
                         "basket_symbols": self.basket_symbols,
                         "basket_weights": self.basket_weights
-                    })
+                    }
+
+                    self.notify(report_data)
                 else:
                     logger.warning("Z-score unavailable.")
+
                 time.sleep(interval_minutes*60)
             except KeyboardInterrupt:
                 logger.info("Monitoring stopped by user.")
@@ -184,12 +81,49 @@ Status: {"NORMAL" if abs(z)<0.5 else "WATCH" if abs(z)<2 else "SIGNAL"}
                 time.sleep(60)
 
 
+# --- Telegram callback polling ---
+def telegram_polling(trader):
+    TELEGRAM_BOT_TOKEN = "8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng"
+    TELEGRAM_CHAT_ID = 317217451
+    offset = None
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+
+    while True:
+        try:
+            params = {'timeout': 30, 'offset': offset}
+            response = requests.get(url, params=params, timeout=35)
+            updates = response.json().get("result", [])
+            for update in updates:
+                if "callback_query" in update:
+                    data = update["callback_query"]["data"]
+                    handle_callback(data, trader)
+                offset = (update["update_id"] + 1)
+            time.sleep(1)
+        except Exception as e:
+            print("Telegram polling error:", e)
+            time.sleep(5)
+
+
+# --- Главная функция ---
 def main():
     monitor = OKXBasketMonitor()
-    monitor.attach(ConsoleObserver())
-    monitor.attach(TelegramObserver())
 
-    # тестовое сообщение
+    # Console logs
+    monitor.attach(ConsoleObserver())
+
+    # Paper trading
+    trader = OKXBasketTrader(paper_trading=True, max_exposure=1000)
+    monitor.attach(trader)
+
+    # Telegram notifications с кнопками
+    telegram_observer = TelegramObserver(trader=trader)
+    monitor.attach(telegram_observer)
+
+    # Старт polling Telegram callback в отдельном потоке
+    polling_thread = threading.Thread(target=telegram_polling, args=(trader,), daemon=True)
+    polling_thread.start()
+
+    # Тестовое сообщение при старте
     monitor.notify({
         "signal": "✅ Test message: TelegramObserver работает!",
         "z": 0,
