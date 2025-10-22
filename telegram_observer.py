@@ -2,10 +2,14 @@ from observer import Observer
 from telegram import Bot
 from datetime import datetime
 
+# --- Настройки Telegram ---
+TELEGRAM_BOT_TOKEN = "8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng"
+TELEGRAM_CHAT_ID = 317217451  # числовой ID чата, куда приходят уведомления
+
 class TelegramObserver(Observer):
-    def __init__(self, token: str, chat_id: str):
-        self.chat_id = chat_id
-        self.bot = Bot(token=token)
+    def __init__(self):
+        self.chat_id = TELEGRAM_CHAT_ID
+        self.bot = Bot(token=TELEGRAM_BOT_TOKEN)
 
     def update(self, data):
         msg = (
