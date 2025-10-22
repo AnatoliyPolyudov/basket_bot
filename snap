@@ -186,7 +186,9 @@ Status: {"NORMAL" if abs(z)<0.5 else "WATCH" if abs(z)<2 else "SIGNAL"}
                         "mean": mean,
                         "std": std,
                         "z": z,
-                        "signal": signal
+                        "signal": signal,
+                        "basket_symbols": self.basket_symbols,
+                        "basket_weights": self.basket_weights
                     })
                 else:
                     logger.warning("Z-score unavailable.")
@@ -267,38 +269,13 @@ class Subject:
 
 from observer import Observer
 from telegram import Bot
-import asyncio
-import threading
 from datetime import datetime
-import time
+import asyncio
 
 class TelegramObserver(Observer):
     def __init__(self, token: str, chat_id: str):
         self.bot = Bot(token=token)
         self.chat_id = chat_id
-        self.queue = asyncio.Queue()
-
-        # Запускаем отдельный поток с собственным event loop
-        self.loop = asyncio.new_event_loop()
-        t = threading.Thread(target=self._start_loop, daemon=True)
-        t.start()
-
-        # Даем loop время стартовать
-        time.sleep(0.5)
-
-    def _start_loop(self):
-        asyncio.set_event_loop(self.loop)
-        self.loop.create_task(self._worker())
-        self.loop.run_forever()
-
-    async def _worker(self):
-        while True:
-            msg = await self.queue.get()
-            try:
-                await self.bot.send_message(chat_id=self.chat_id, text=msg)
-            except Exception as e:
-                print(f"Failed to send Telegram message: {e}")
-            self.queue.task_done()
 
     def update(self, data):
         msg = (
@@ -309,9 +286,12 @@ class TelegramObserver(Observer):
             f"Basket Price: {data['basket_price']:.2f}\n"
             f"Target Price: {data['target_price']:.2f}"
         )
-        # Добавляем сообщение в очередь Telegram
-        self.loop.call_soon_threadsafe(self.queue.put_nowait, msg)
-        print(f"Queued message for Telegram: {msg[:50]}...")
+        # Отправляем сообщение синхронно через asyncio.run
+        try:
+            asyncio.run(self.bot.send_message(chat_id=self.chat_id, text=msg))
+            print(f"✅ Telegram message sent: {msg[:50]}...")
+        except Exception as e:
+            print(f"❌ Failed to send Telegram message: {e}")
 
 
 ===== test_bot.py =====
@@ -326,3 +306,73 @@ async def main():
     print(me)
 
 asyncio.run(main())
+
+
+===== test_trader.py =====
+
+
+# test_trader.py
+
+from monitor import OKXBasketMonitor
+from trader import OKXBasketTrader
+from console_observer import ConsoleObserver
+
+def main():
+    # Создаем монитор
+    monitor = OKXBasketMonitor()
+
+    # Подключаем ConsoleObserver для логов
+    console_observer = ConsoleObserver()
+    monitor.attach(console_observer)
+
+    # Подключаем трейдер в режиме paper trading
+    trader = OKXBasketTrader(paper_trading=True, max_exposure=1000)
+    monitor.attach(trader)
+
+    print("✅ Starting monitor + trader in PAPER TRADING mode...")
+    # Запускаем монитор (он будет уведомлять трейдера)
+    monitor.run(interval_minutes=1)  # маленький интервал для теста
+
+if __name__ == "__main__":
+    main()
+
+
+===== trader.py =====
+
+
+# trader.py
+
+from observer import Observer
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class OKXBasketTrader(Observer):
+    def __init__(self, paper_trading=True, max_exposure=1000):
+        """
+        paper_trading: True — не ставит реальные ордера, только выводит в консоль.
+        max_exposure: максимальная сумма на одну позицию.
+        """
+        self.paper_trading = paper_trading
+        self.max_exposure = max_exposure
+        self.current_positions = {}  # словарь вида {'BTC/USDT': size, 'ETH/USDT': size}
+
+    def update(self, data):
+        """
+        Метод Observer: вызывается при каждом новом сигнале от монитора.
+        """
+        signal = data.get("signal")
+        if signal:
+            self.execute_signal(signal, data)
+
+    def execute_signal(self, signal, data):
+        """
+        Пока просто выводит, что будет сделано.
+        На следующем шаге сюда будем добавлять реальные ордера.
+        """
+        if self.paper_trading:
+            logger.info(f"[PAPER TRADING] Signal received: {signal}")
+            logger.info(f"[PAPER TRADING] Data: {data}")
+        else:
+            logger.info(f"[REAL TRADING] Would execute: {signal}")
