@@ -1,51 +1,45 @@
 # telegram_observer.py
 
 from observer import Observer
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 from datetime import datetime
 import threading
-import asyncio
 
 class TelegramObserver(Observer):
-    def __init__(self, token: str, chat_id: str):
-        self.bot = Bot(token=token)
+    def __init__(self, token: str, chat_id: str, trader=None):
         self.chat_id = chat_id
+        self.trader = trader
 
         # Создаём приложение для polling
         self.app = Application.builder().token(token).build()
 
-        # Регистрируем обработчики команд и кнопок
+        # Обработчики
         self.app.add_handler(CommandHandler("start", self.start))
         self.app.add_handler(CallbackQueryHandler(self.button_handler))
 
-        # Запускаем polling в отдельном потоке
-        thread = threading.Thread(target=self._run_polling, daemon=True)
-        thread.start()
+        # Запуск polling в отдельном потоке
+        threading.Thread(target=self.app.run_polling, daemon=True).start()
 
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда /start"""
         await update.message.reply_text("Бот запущен. Я буду присылать торговые сигналы.")
 
     async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обрабатываем нажатия кнопок"""
         query = update.callback_query
         await query.answer()
-
         action = query.data
-        text = f"[Paper] Вы выбрали: {action}"
-        print(text)  # логируем в консоль
 
-        # Убираем кнопки после нажатия
+        # Вызываем методы трейдера
+        if self.trader:
+            if action == "Открыть позицию":
+                self.trader.open_position("BTC/USDT")
+            elif action == "Закрыть позицию":
+                self.trader.close_position("BTC/USDT")
+
         await query.edit_message_reply_markup(reply_markup=None)
-        await query.message.reply_text(text)
-
-    def _run_polling(self):
-        """Запускает polling в фоне"""
-        asyncio.run(self.app.run_polling())
+        await query.message.reply_text(f"[Paper] Вы выбрали: {action}")
 
     def update(self, data):
-        """Получает сигнал от монитора и отправляет сообщение с кнопками"""
         msg = (
             f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M')}] Basket Monitor Update\n"
             f"Signal: {data['signal']}\n"
@@ -63,15 +57,10 @@ class TelegramObserver(Observer):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Используем loop бота, чтобы ставить задачу отправки сообщения
-        loop = self.app.bot.loop
-        if loop.is_running():
-            loop.create_task(
-                self.bot.send_message(
-                    chat_id=self.chat_id,
-                    text=msg,
-                    reply_markup=reply_markup
-                )
-            )
-        else:
-            print(f"❌ Event loop не запущен, не удалось отправить сообщение: {data['signal']}")
+        # Отправляем через self.app.bot
+        # PTB v20+ автоматически создаёт loop, не нужно asyncio.run()
+        self.app.create_task(self.app.bot.send_message(
+            chat_id=self.chat_id,
+            text=msg,
+            reply_markup=reply_markup
+        ))
