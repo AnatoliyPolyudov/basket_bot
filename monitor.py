@@ -16,7 +16,7 @@ import sys
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
-# Создаем отдельный логгер для красивого вывода
+# Create separate logger for pretty output
 console_logger = logging.StreamHandler()
 console_logger.setLevel(logging.INFO)
 formatter = logging.Formatter('%(message)s')
@@ -36,7 +36,7 @@ class OKXBasketMonitor(Subject):
             "sandbox": False
         })
         self.target = "ETH/USDT:USDT"
-        # Мем-корзина вместо обычных альтов
+        # Meme basket instead of regular alts
         self.basket_symbols = ["DOGE/USDT:USDT", "SHIB/USDT:USDT", "PEPE/USDT:USDT"]
         self.basket_weights = []
         self.historical_data = {}
@@ -58,8 +58,8 @@ class OKXBasketMonitor(Subject):
             except Exception as e:
                 logger.warning(f"❌ Error loading {symbol}: {e}")
 
-        # ДОБАВЛЕНО: проверка что загрузилось
-        print(f"📦 Загружено данных: {list(self.historical_data.keys())}", flush=True)
+        # ADDED: check what loaded
+        print(f"📦 Loaded data: {list(self.historical_data.keys())}", flush=True)
         
         valid = [s for s in [self.target]+self.basket_symbols if s in self.historical_data and len(self.historical_data[s])>=10]
         if len(valid) < 3:
@@ -70,9 +70,9 @@ class OKXBasketMonitor(Subject):
     def calculate_basket_weights(self):
         correlations, valid = [], []
         
-        # ИСПРАВЛЕНО: используем обычные print с flush вместо pretty_logger
+        # FIXED: use regular print with flush instead of pretty_logger
         print("🔍 " + "="*50, flush=True)
-        print("🔍 АНАЛИЗ КОРРЕЛЯЦИЙ С ETH", flush=True)  # ИСПРАВЛЕНО: было BTC
+        print("🔍 CORRELATION ANALYSIS WITH ETH", flush=True)
         print("🔍 " + "="*50, flush=True)
         
         for symbol in self.basket_symbols:
@@ -84,22 +84,22 @@ class OKXBasketMonitor(Subject):
                         correlations.append(corr)
                         valid.append(symbol)
                         
-                        # КРАСИВЫЙ ВЫВОД КОРРЕЛЯЦИЙ
+                        # BEAUTIFUL CORRELATION OUTPUT
                         asset_name = symbol.split('/')[0]
                         corr_percent = abs(corr) * 100
                         
                         if corr > 0.8:
-                            emoji, quality = "🟢", "ОТЛИЧНАЯ"
+                            emoji, quality = "🟢", "EXCELLENT"
                         elif corr > 0.6:
-                            emoji, quality = "🟡", "ХОРОШАЯ" 
+                            emoji, quality = "🟡", "GOOD" 
                         elif corr > 0.4:
-                            emoji, quality = "🟠", "СРЕДНЯЯ"
+                            emoji, quality = "🟠", "AVERAGE"
                         elif corr > 0.2:
-                            emoji, quality = "🔴", "СЛАБАЯ"
+                            emoji, quality = "🔴", "WEAK"
                         else:
-                            emoji, quality = "💤", "ОТСУТСТВУЕТ"
+                            emoji, quality = "💤", "NO CORR"
                         
-                        direction = "прямая" if corr > 0 else "обратная"
+                        direction = "positive" if corr > 0 else "negative"
                         print(f"{emoji} {asset_name:6} | {corr:7.3f} | {corr_percent:5.1f}% | {quality:10} | {direction}", flush=True)
         
         print("🔍 " + "="*50, flush=True)
@@ -116,17 +116,17 @@ class OKXBasketMonitor(Subject):
         self.basket_weights = abs_corr / np.sum(abs_corr)
         
         print("🎯 " + "="*50, flush=True)
-        print("🎯 ИТОГОВАЯ КОРЗИНА С ВЕСАМИ", flush=True)
+        print("🎯 FINAL BASKET WITH WEIGHTS", flush=True)
         print("🎯 " + "="*50, flush=True)
         
         total_corr = 0
         for s, w, c in zip(self.basket_symbols, self.basket_weights, correlations):
             asset_name = s.split('/')[0]
             total_corr += abs(c)
-            print(f"📊 {asset_name:6} | Вес: {w:6.3f} | Корр: {c:6.3f}", flush=True)
+            print(f"📊 {asset_name:6} | Weight: {w:6.3f} | Corr: {c:6.3f}", flush=True)
         
         avg_correlation = total_corr / len(correlations)
-        print(f"📈 Средняя корреляция: {avg_correlation:.3f}", flush=True)
+        print(f"📈 Average correlation: {avg_correlation:.3f}", flush=True)
         print("🎯 " + "="*50, flush=True)
 
     def get_current_prices(self):
@@ -174,7 +174,6 @@ class OKXBasketMonitor(Subject):
 
     def trading_signal(self, z):
         if z is None: return "NO DATA"
-        # ИСПРАВЛЕНО: ETH вместо BTC
         if z > 2.0: return "SHORT ETH / LONG BASKET"
         if z < -2.0: return "LONG ETH / SHORT BASKET"
         if abs(z) < 0.5: return "EXIT POSITION"
@@ -183,19 +182,19 @@ class OKXBasketMonitor(Subject):
     def run(self, interval_minutes=1):
         logger.info("🚀 Starting OKX basket monitor...")
         
-        # ДОБАВЛЕНО: принудительный flush перед анализом
+        # ADDED: force flush before analysis
         sys.stdout.flush()
         
         if not self.fetch_historical_data():
             logger.error("❌ Failed to fetch historical data.")
             return
         
-        # ДОБАВЛЕНО: принудительный flush перед расчетом весов
+        # ADDED: force flush before weight calculation
         sys.stdout.flush()
         
         self.calculate_basket_weights()
         
-        # ДОБАВЛЕНО: принудительный flush после расчета весов
+        # ADDED: force flush after weight calculation
         sys.stdout.flush()
         
         if not self.basket_symbols:
@@ -205,7 +204,7 @@ class OKXBasketMonitor(Subject):
 
         last_telegram_time = datetime.utcnow() - timedelta(minutes=10)
 
-        # --- первое актуальное сообщение ---
+        # --- first actual message ---
         prices = self.get_current_prices()
         if prices:
             z, spread, stats = self.calculate_zscore(prices)
@@ -251,7 +250,7 @@ class OKXBasketMonitor(Subject):
                         "basket_weights": self.basket_weights
                     }
 
-                    # Красивый вывод Z-score в реальном времени
+                    # Beautiful Z-score output in real time
                     current_time = datetime.utcnow().strftime('%H:%M:%S')
                     if abs(z) < 1.0:
                         z_color = "🟢"
@@ -262,14 +261,14 @@ class OKXBasketMonitor(Subject):
                     else:
                         z_color = "🔴"
                     
-                    pretty_logger.info(f"{z_color} [{current_time}] Z-score: {z:6.2f} | Сигнал: {signal}")
+                    pretty_logger.info(f"{z_color} [{current_time}] Z-score: {z:6.2f} | Signal: {signal}")
 
                     if datetime.utcnow() - last_telegram_time >= timedelta(minutes=10):
                         self.notify(report_data)
                         last_telegram_time = datetime.utcnow()
                 else:
                     current_time = datetime.utcnow().strftime('%H:%M:%S')
-                    pretty_logger.info(f"⚪ [{current_time}] Z-score: НЕТ ДАННЫХ")
+                    pretty_logger.info(f"⚪ [{current_time}] Z-score: NO DATA")
 
                 time.sleep(interval_minutes*60)
             except KeyboardInterrupt:
@@ -320,4 +319,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
