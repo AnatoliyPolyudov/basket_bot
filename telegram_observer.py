@@ -1,44 +1,13 @@
 from observer import Observer
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
+from telegram import Bot
 from datetime import datetime
-import threading
 
 class TelegramObserver(Observer):
-    def __init__(self, token: str, chat_id: str, trader=None):
+    def __init__(self, token: str, chat_id: str):
         self.chat_id = chat_id
-        self.trader = trader
-
-        # Создаём приложение для polling
-        self.app = Application.builder().token(token).build()
-
-        # Обработчики команд и кнопок
-        self.app.add_handler(CommandHandler("start", self.start))
-        self.app.add_handler(CallbackQueryHandler(self.button_handler))
-
-        # Запуск polling в отдельном потоке
-        threading.Thread(target=self.app.run_polling, daemon=True).start()
-
-    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("Бот запущен. Я буду присылать торговые сигналы.")
-
-    async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        await query.answer()
-        action = query.data
-
-        # Взаимодействие с трейдером
-        if self.trader:
-            if action == "Открыть позицию":
-                self.trader.open_position("BTC/USDT")
-            elif action == "Закрыть позицию":
-                self.trader.close_position("BTC/USDT")
-
-        await query.edit_message_reply_markup(reply_markup=None)
-        await query.message.reply_text(f"[Paper] Вы выбрали: {action}")
+        self.bot = Bot(token=token)
 
     def update(self, data):
-        """Вызывается синхронно из монитора"""
         msg = (
             f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M')}] Basket Monitor Update\n"
             f"Signal: {data['signal']}\n"
@@ -47,20 +16,7 @@ class TelegramObserver(Observer):
             f"Basket Price: {data['basket_price']:.2f}\n"
             f"Target Price: {data['target_price']:.2f}"
         )
-
-        keyboard = [
-            [
-                InlineKeyboardButton("Открыть позицию", callback_data="Открыть позицию"),
-                InlineKeyboardButton("Закрыть позицию", callback_data="Закрыть позицию")
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        # --- безопасная отправка сообщения через loop приложения ---
-        self.app.create_task(
-            self.app.bot.send_message(
-                chat_id=self.chat_id,
-                text=msg,
-                reply_markup=reply_markup
-            )
-        )
+        try:
+            self.bot.send_message(chat_id=self.chat_id, text=msg)
+        except Exception as e:
+            print("❌ Telegram send failed:", e)
