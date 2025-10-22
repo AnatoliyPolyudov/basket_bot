@@ -1,5 +1,30 @@
 
 
+===== callback_handler.py =====
+
+
+# callback_handler.py
+def handle_callback(callback_data, trader):
+    """
+    Обработка нажатий кнопок Telegram.
+    callback_data: 'OPEN:LONG BTC / SHORT BASKET' или 'CLOSE:LONG BTC / SHORT BASKET'
+    """
+    try:
+        action, signal = callback_data.split(":", 1)
+        if trader is None:
+            print("❌ Trader not provided for callback")
+            return
+
+        if action == "OPEN":
+            trader.open_position(signal)
+        elif action == "CLOSE":
+            trader.close_position(signal)
+        else:
+            print(f"❌ Unknown callback action: {action}")
+    except Exception as e:
+        print(f"❌ Callback handler error: {e}")
+
+
 ===== console_observer.py =====
 
 
@@ -10,6 +35,7 @@ class ConsoleObserver(Observer):
     def update(self, data):
         print(f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}] Observer received update:")
         print(f"  Signal: {data['signal']}, Z-score: {data['z']:.4f}, Spread: {data['spread']:.6f}")
+
 
 
 ===== monitor.py =====
@@ -23,14 +49,13 @@ import logging
 from datetime import datetime
 from observer import Subject
 from console_observer import ConsoleObserver
-from telegram_observer import TelegramObserver  # синхронный, без asyncio
+from trader import OKXBasketTrader
+from telegram_observer import TelegramObserver
+from callback_handler import handle_callback
+import threading
+import requests
 
-# Logging setup
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(message)s",
-    handlers=[logging.StreamHandler()]
-)
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 class OKXBasketMonitor(Subject):
@@ -46,6 +71,10 @@ class OKXBasketMonitor(Subject):
         self.basket_weights = []
         self.historical_data = {}
         self.lookback_days = 30
+
+    # -------------------
+    # Методы класса
+    # -------------------
 
     def fetch_historical_data(self):
         logger.info("Fetching historical data from OKX...")
@@ -143,7 +172,10 @@ class OKXBasketMonitor(Subject):
         if abs(z) < 0.5: return "EXIT POSITION"
         return "HOLD"
 
-    def run(self, interval_minutes=1):  # короткий интервал для теста
+    # -------------------
+    # Основной цикл
+    # -------------------
+    def run(self, interval_minutes=1):
         logger.info("Starting OKX basket monitor...")
         if not self.fetch_historical_data():
             logger.error("Failed to fetch historical data.")
@@ -165,21 +197,8 @@ class OKXBasketMonitor(Subject):
                 if z is not None:
                     mean, std = stats
                     signal = self.trading_signal(z)
-                    report = f"""
-=== OKX FUTURES BASKET MONITOR ===
-Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC
-BTC-USDT: {prices[self.target]:.2f}
-Basket Price: {self.calculate_basket_price(prices):.2f}
-Spread: {spread:.6f}
-Mean: {mean:.6f} ± {std:.6f}
-Z-Score: {z:.4f}
-Signal: {signal}
-Status: {"NORMAL" if abs(z)<0.5 else "WATCH" if abs(z)<2 else "SIGNAL"}
-"""
-                    print(report)
 
-                    # уведомляем наблюдателей (Telegram, Console и др.)
-                    self.notify({
+                    report_data = {
                         "time": datetime.utcnow(),
                         "target_price": prices[self.target],
                         "basket_price": self.calculate_basket_price(prices),
@@ -190,9 +209,12 @@ Status: {"NORMAL" if abs(z)<0.5 else "WATCH" if abs(z)<2 else "SIGNAL"}
                         "signal": signal,
                         "basket_symbols": self.basket_symbols,
                         "basket_weights": self.basket_weights
-                    })
+                    }
+
+                    self.notify(report_data)
                 else:
                     logger.warning("Z-score unavailable.")
+
                 time.sleep(interval_minutes*60)
             except KeyboardInterrupt:
                 logger.info("Monitoring stopped by user.")
@@ -202,14 +224,50 @@ Status: {"NORMAL" if abs(z)<0.5 else "WATCH" if abs(z)<2 else "SIGNAL"}
                 time.sleep(60)
 
 
+# -------------------
+# Telegram polling
+# -------------------
+def telegram_polling(trader):
+    TELEGRAM_BOT_TOKEN = "8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng"
+    offset = None
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
+
+    while True:
+        try:
+            params = {'timeout': 30, 'offset': offset}
+            response = requests.get(url, params=params, timeout=35)
+            updates = response.json().get("result", [])
+            for update in updates:
+                if "callback_query" in update:
+                    data = update["callback_query"]["data"]
+                    handle_callback(data, trader)
+                offset = (update["update_id"] + 1)
+            time.sleep(1)
+        except Exception as e:
+            print("Telegram polling error:", e)
+            time.sleep(5)
+
+
+# -------------------
+# Main
+# -------------------
 def main():
     monitor = OKXBasketMonitor()
 
-    # Console logging
+    # Console logs
     monitor.attach(ConsoleObserver())
 
+    # Paper trading
+    trader = OKXBasketTrader(paper_trading=True, max_exposure=1000)
+    monitor.attach(trader)
+
     # Telegram notifications
-    monitor.attach(TelegramObserver())
+    telegram_observer = TelegramObserver(trader=trader)
+    monitor.attach(telegram_observer)
+
+    # Telegram polling
+    polling_thread = threading.Thread(target=telegram_polling, args=(trader,), daemon=True)
+    polling_thread.start()
 
     # Тестовое сообщение при старте
     monitor.notify({
@@ -220,7 +278,7 @@ def main():
         "target_price": 0
     })
 
-    monitor.run(interval_minutes=1)  # короткий интервал для теста
+    monitor.run(interval_minutes=1)
 
 
 if __name__ == "__main__":
@@ -257,33 +315,58 @@ class Subject:
 ===== telegram_observer.py =====
 
 
+# telegram_observer.py
 from observer import Observer
-from telegram import Bot
+import json
+import requests
 from datetime import datetime
 
-# --- Настройки Telegram ---
 TELEGRAM_BOT_TOKEN = "8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng"
-TELEGRAM_CHAT_ID = 317217451  # числовой ID чата, куда приходят уведомления
+TELEGRAM_CHAT_ID = 317217451  # числовой ID чата
 
 class TelegramObserver(Observer):
-    def __init__(self):
-        self.bot = Bot(token=TELEGRAM_BOT_TOKEN)
+    def __init__(self, trader=None):
+        self.token = TELEGRAM_BOT_TOKEN
+        self.chat_id = TELEGRAM_CHAT_ID
+        self.trader = trader
 
-    def update(self, data):
-        # формируем сообщение
-        msg = (
-            f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M')}] Basket Monitor Update\n"
-            f"Signal: {data['signal']}\n"
-            f"Z-score: {data['z']:.4f}\n"
-            f"Spread: {data['spread']:.6f}\n"
-            f"Basket Price: {data['basket_price']:.2f}\n"
-            f"Target Price: {data['target_price']:.2f}"
-        )
+    def send_message(self, text, buttons=None):
+        url = f"https://api.telegram.org/bot{self.token}/sendMessage"
+        payload = {
+            'chat_id': self.chat_id,
+            'text': text,
+            'parse_mode': 'HTML'
+        }
+        if buttons:
+            payload['reply_markup'] = json.dumps({'inline_keyboard': buttons})
         try:
-            self.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
+            requests.post(url, data=payload, timeout=10)
             print("✅ Telegram message sent")
         except Exception as e:
             print("❌ Telegram send failed:", e)
+
+    def update(self, data):
+        # формируем текст сообщения
+        msg = (
+            f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M')}] Basket Monitor Update\n"
+            f"Signal: {data.get('signal')}\n"
+            f"Z-score: {data.get('z', 0):.4f}\n"
+            f"Spread: {data.get('spread', 0):.6f}\n"
+            f"Basket Price: {data.get('basket_price', 0):.2f}\n"
+            f"Target Price: {data.get('target_price', 0):.2f}"
+        )
+
+        buttons = None
+        signal = data.get('signal', "")
+        if "LONG" in signal or "SHORT" in signal:
+            buttons = [
+                [
+                    {'text': 'Open Position', 'callback_data': f'OPEN:{signal}'},
+                    {'text': 'Close Position', 'callback_data': f'CLOSE:{signal}'}
+                ]
+            ]
+
+        self.send_message(msg, buttons)
 
 
 ===== test_bot.py =====
