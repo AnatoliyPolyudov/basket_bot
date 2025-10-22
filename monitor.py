@@ -190,16 +190,15 @@ Status: {"NORMAL" if abs(z)<0.5 else "WATCH" if abs(z)<2 else "SIGNAL"}
 def main():
     monitor = OKXBasketMonitor()
 
+    # Console logging
     console_observer = ConsoleObserver()
     monitor.attach(console_observer)
 
-    telegram_observer = TelegramObserver(
-        token="8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng",
-        chat_id="317217451"
-    )
+    # Telegram notifications
+    telegram_observer = TelegramObserver()  # использует токен и chat_id внутри
     monitor.attach(telegram_observer)
 
-    # --- Тестовое сообщение при старте ---
+    # Тестовое сообщение при старте
     try:
         telegram_observer.update({
             "time": None,
