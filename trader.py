@@ -1,5 +1,3 @@
-# trader.py
-
 from observer import Observer
 import logging
 
@@ -34,7 +32,7 @@ class OKXBasketTrader(Observer):
         else:
             logger.info(f"[REAL TRADING] Would execute: {signal}")
 
-    # --- Новые методы для кнопок ---
+    # --- Методы для кнопок ---
     def open_position(self, symbol: str, size=None):
         if size is None:
             size = self.max_exposure
