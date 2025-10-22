@@ -1,7 +1,8 @@
 from observer import Observer
 import logging
 
-logging.basicConfig(level=logging.INFO)
+# Установи уровень WARNING вместо INFO
+logging.basicConfig(level=logging.WARNING)  # ← было INFO
 logger = logging.getLogger(__name__)
 
 class OKXBasketTrader(Observer):
@@ -19,7 +20,7 @@ class OKXBasketTrader(Observer):
         Метод Observer: вызывается при каждом новом сигнале от монитора.
         """
         signal = data.get("signal")
-        if signal:
+        if signal and signal != "HOLD":  # ← ДОБАВЛЕНО: игнорируем HOLD сигналы
             self.execute_signal(signal, data)
 
     def execute_signal(self, signal, data):
@@ -27,21 +28,23 @@ class OKXBasketTrader(Observer):
         Пока просто выводит, что будет сделано.
         """
         if self.paper_trading:
-            logger.info(f"[PAPER TRADING] Signal received: {signal}")
-            logger.info(f"[PAPER TRADING] Data: {data}")
+            # Используем debug вместо info для спам-сообщений
+            logger.debug(f"[PAPER TRADING] Signal received: {signal}")
+            logger.debug(f"[PAPER TRADING] Data: {data}")
         else:
             logger.info(f"[REAL TRADING] Would execute: {signal}")
 
     # --- Методы для кнопок ---
-    def open_position(self, symbol: str, size=None):
+    def open_position(self, signal: str, size=None):
         if size is None:
             size = self.max_exposure
-        self.current_positions[symbol] = size
-        logger.info(f"[PAPER TRADING] Opened position {symbol} with size {size}")
+        self.current_positions[signal] = size
+        # Оставляем info только для важных действий
+        logger.info(f"✅ [PAPER] OPENED: {signal} with size {size}")
 
-    def close_position(self, symbol: str):
-        if symbol in self.current_positions:
-            del self.current_positions[symbol]
-            logger.info(f"[PAPER TRADING] Closed position {symbol}")
+    def close_position(self, signal: str):
+        if signal in self.current_positions:
+            del self.current_positions[signal]
+            logger.info(f"✅ [PAPER] CLOSED: {signal}")
         else:
-            logger.info(f"[PAPER TRADING] No open position to close for {symbol}")
+            logger.warning(f"⚠️ [PAPER] No open position to close for {signal}")
