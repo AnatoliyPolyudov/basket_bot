@@ -1,5 +1,5 @@
 from observer import Observer
-from telegram import Bot
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from datetime import datetime
 import asyncio
 
@@ -17,9 +17,28 @@ class TelegramObserver(Observer):
             f"Basket Price: {data['basket_price']:.2f}\n"
             f"Target Price: {data['target_price']:.2f}"
         )
-        # Отправляем сообщение синхронно через asyncio.run
+
+        # Кнопки под сообщением
+        keyboard = [
+            [
+                InlineKeyboardButton("Войти", callback_data="execute"),
+                InlineKeyboardButton("Пропустить", callback_data="skip"),
+            ],
+            [
+                InlineKeyboardButton("Закрыть позиции", callback_data="exit"),
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        # Отправляем сообщение с кнопками
         try:
-            asyncio.run(self.bot.send_message(chat_id=self.chat_id, text=msg))
-            print(f"✅ Telegram message sent: {msg[:50]}...")
+            asyncio.run(
+                self.bot.send_message(
+                    chat_id=self.chat_id,
+                    text=msg,
+                    reply_markup=reply_markup
+                )
+            )
+            print(f"Telegram message sent with buttons: {data['signal']}")
         except Exception as e:
-            print(f"❌ Failed to send Telegram message: {e}")
+            print(f"Failed to send Telegram message: {e}")
