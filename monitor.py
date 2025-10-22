@@ -11,6 +11,7 @@ from telegram_observer import TelegramObserver
 from callback_handler import handle_callback
 import threading
 import requests
+import sys
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -57,6 +58,9 @@ class OKXBasketMonitor(Subject):
             except Exception as e:
                 logger.warning(f"❌ Error loading {symbol}: {e}")
 
+        # ДОБАВЛЕНО: проверка что загрузилось
+        print(f"📦 Загружено данных: {list(self.historical_data.keys())}", flush=True)
+        
         valid = [s for s in [self.target]+self.basket_symbols if s in self.historical_data and len(self.historical_data[s])>=10]
         if len(valid) < 3:
             logger.error("❌ Not enough valid symbols for analysis.")
@@ -66,9 +70,10 @@ class OKXBasketMonitor(Subject):
     def calculate_basket_weights(self):
         correlations, valid = [], []
         
-        pretty_logger.info("🔍 " + "="*50)
-        pretty_logger.info("🔍 АНАЛИЗ КОРРЕЛЯЦИЙ С BTC")
-        pretty_logger.info("🔍 " + "="*50)
+        # ИСПРАВЛЕНО: используем обычные print с flush вместо pretty_logger
+        print("🔍 " + "="*50, flush=True)
+        print("🔍 АНАЛИЗ КОРРЕЛЯЦИЙ С ETH", flush=True)  # ИСПРАВЛЕНО: было BTC
+        print("🔍 " + "="*50, flush=True)
         
         for symbol in self.basket_symbols:
             if symbol in self.historical_data and self.target in self.historical_data:
@@ -95,9 +100,9 @@ class OKXBasketMonitor(Subject):
                             emoji, quality = "💤", "ОТСУТСТВУЕТ"
                         
                         direction = "прямая" if corr > 0 else "обратная"
-                        pretty_logger.info(f"{emoji} {asset_name:6} | {corr:7.3f} | {corr_percent:5.1f}% | {quality:10} | {direction}")
+                        print(f"{emoji} {asset_name:6} | {corr:7.3f} | {corr_percent:5.1f}% | {quality:10} | {direction}", flush=True)
         
-        pretty_logger.info("🔍 " + "="*50)
+        print("🔍 " + "="*50, flush=True)
         
         self.basket_symbols = valid
         if not correlations:
@@ -110,19 +115,19 @@ class OKXBasketMonitor(Subject):
         abs_corr = np.abs(correlations)
         self.basket_weights = abs_corr / np.sum(abs_corr)
         
-        pretty_logger.info("🎯 " + "="*50)
-        pretty_logger.info("🎯 ИТОГОВАЯ КОРЗИНА С ВЕСАМИ")
-        pretty_logger.info("🎯 " + "="*50)
+        print("🎯 " + "="*50, flush=True)
+        print("🎯 ИТОГОВАЯ КОРЗИНА С ВЕСАМИ", flush=True)
+        print("🎯 " + "="*50, flush=True)
         
         total_corr = 0
         for s, w, c in zip(self.basket_symbols, self.basket_weights, correlations):
             asset_name = s.split('/')[0]
             total_corr += abs(c)
-            pretty_logger.info(f"📊 {asset_name:6} | Вес: {w:6.3f} | Корр: {c:6.3f}")
+            print(f"📊 {asset_name:6} | Вес: {w:6.3f} | Корр: {c:6.3f}", flush=True)
         
         avg_correlation = total_corr / len(correlations)
-        pretty_logger.info(f"📈 Средняя корреляция: {avg_correlation:.3f}")
-        pretty_logger.info("🎯 " + "="*50)
+        print(f"📈 Средняя корреляция: {avg_correlation:.3f}", flush=True)
+        print("🎯 " + "="*50, flush=True)
 
     def get_current_prices(self):
         prices = {}
@@ -169,17 +174,30 @@ class OKXBasketMonitor(Subject):
 
     def trading_signal(self, z):
         if z is None: return "NO DATA"
-        if z > 2.0: return "SHORT BTC / LONG BASKET"
-        if z < -2.0: return "LONG BTC / SHORT BASKET"
+        # ИСПРАВЛЕНО: ETH вместо BTC
+        if z > 2.0: return "SHORT ETH / LONG BASKET"
+        if z < -2.0: return "LONG ETH / SHORT BASKET"
         if abs(z) < 0.5: return "EXIT POSITION"
         return "HOLD"
 
     def run(self, interval_minutes=1):
         logger.info("🚀 Starting OKX basket monitor...")
+        
+        # ДОБАВЛЕНО: принудительный flush перед анализом
+        sys.stdout.flush()
+        
         if not self.fetch_historical_data():
             logger.error("❌ Failed to fetch historical data.")
             return
+        
+        # ДОБАВЛЕНО: принудительный flush перед расчетом весов
+        sys.stdout.flush()
+        
         self.calculate_basket_weights()
+        
+        # ДОБАВЛЕНО: принудительный flush после расчета весов
+        sys.stdout.flush()
+        
         if not self.basket_symbols:
             logger.error("❌ No valid symbols for monitoring.")
             return
