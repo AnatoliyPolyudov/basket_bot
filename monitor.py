@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from observer import Subject
 from console_observer import ConsoleObserver
 from trader import OKXBasketTrader
@@ -143,6 +143,8 @@ class OKXBasketMonitor(Subject):
             return
         logger.info(f"Monitoring symbols: {self.basket_symbols}")
 
+        last_telegram_time = datetime.utcnow() - timedelta(minutes=10)
+
         while True:
             try:
                 prices = self.get_current_prices()
@@ -168,7 +170,15 @@ class OKXBasketMonitor(Subject):
                         "basket_weights": self.basket_weights
                     }
 
+                    # уведомляем всех наблюдателей
                     self.notify(report_data)
+
+                    # уведомления в Telegram раз в 10 минут
+                    if (datetime.utcnow() - last_telegram_time) >= timedelta(minutes=10):
+                        if hasattr(self, '_telegram_observer'):
+                            self._telegram_observer.update(report_data)
+                        last_telegram_time = datetime.utcnow()
+
                 else:
                     logger.warning("Z-score unavailable.")
 
@@ -221,6 +231,7 @@ def main():
     # Telegram notifications
     telegram_observer = TelegramObserver(trader=trader)
     monitor.attach(telegram_observer)
+    monitor._telegram_observer = telegram_observer  # ссылка для раз в 10 минут
 
     # Telegram polling
     polling_thread = threading.Thread(target=telegram_polling, args=(trader,), daemon=True)
@@ -232,7 +243,8 @@ def main():
         "z": 0,
         "spread": 0,
         "basket_price": 0,
-        "target_price": 0
+        "target_price": 0,
+        "basket_symbols": monitor.basket_symbols
     })
 
     monitor.run(interval_minutes=1)
