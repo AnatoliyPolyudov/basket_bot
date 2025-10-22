@@ -1,5 +1,3 @@
-# telegram_observer.py
-
 from observer import Observer
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
@@ -57,7 +55,6 @@ class TelegramObserver(Observer):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Отправляем сообщение через self.app.bot
         self.app.create_task(
             self.app.bot.send_message(
                 chat_id=self.chat_id,
