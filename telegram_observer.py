@@ -23,9 +23,9 @@ class TelegramObserver(Observer):
             payload['reply_markup'] = json.dumps({'inline_keyboard': buttons})
         try:
             requests.post(url, data=payload, timeout=10)
-            print("✅ Telegram message sent")
+            print("Telegram message sent")
         except Exception as e:
-            print("❌ Telegram send failed:", e)
+            print("Telegram send failed:", e)
 
     def update(self, data):
         basket_symbols = data.get('basket_symbols', [])
