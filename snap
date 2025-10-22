@@ -23,7 +23,7 @@ import logging
 from datetime import datetime
 from observer import Subject
 from console_observer import ConsoleObserver
-from telegram_observer import TelegramObserver
+from telegram_observer import TelegramObserver  # синхронный, без asyncio
 
 # Logging setup
 logging.basicConfig(
@@ -143,7 +143,7 @@ class OKXBasketMonitor(Subject):
         if abs(z) < 0.5: return "EXIT POSITION"
         return "HOLD"
 
-    def run(self, interval_minutes=5):
+    def run(self, interval_minutes=1):  # короткий интервал для теста
         logger.info("Starting OKX basket monitor...")
         if not self.fetch_historical_data():
             logger.error("Failed to fetch historical data.")
@@ -178,6 +178,7 @@ Status: {"NORMAL" if abs(z)<0.5 else "WATCH" if abs(z)<2 else "SIGNAL"}
 """
                     print(report)
 
+                    # уведомляем наблюдателей (Telegram, Console и др.)
                     self.notify({
                         "time": datetime.utcnow(),
                         "target_price": prices[self.target],
@@ -204,33 +205,22 @@ Status: {"NORMAL" if abs(z)<0.5 else "WATCH" if abs(z)<2 else "SIGNAL"}
 def main():
     monitor = OKXBasketMonitor()
 
-    console_observer = ConsoleObserver()
-    monitor.attach(console_observer)
+    # Console logging
+    monitor.attach(ConsoleObserver())
 
-    telegram_observer = TelegramObserver(
-        token="8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng",
-        chat_id="317217451"
-    )
-    monitor.attach(telegram_observer)
+    # Telegram notifications
+    monitor.attach(TelegramObserver())
 
-    # --- Тестовое сообщение при старте ---
-    try:
-        telegram_observer.update({
-            "time": None,
-            "target_price": 0,
-            "basket_price": 0,
-            "spread": 0,
-            "mean": 0,
-            "std": 0,
-            "z": 0,
-            "signal": "✅ Test message: TelegramObserver работает!"
-        })
-        print("✅ Test message queued for Telegram")
-    except Exception as e:
-        print("❌ Failed to queue test message:", e)
-    # -----------------------------------
+    # Тестовое сообщение при старте
+    monitor.notify({
+        "signal": "✅ Test message: TelegramObserver работает!",
+        "z": 0,
+        "spread": 0,
+        "basket_price": 0,
+        "target_price": 0
+    })
 
-    monitor.run(interval_minutes=5)
+    monitor.run(interval_minutes=1)  # короткий интервал для теста
 
 
 if __name__ == "__main__":
@@ -267,49 +257,20 @@ class Subject:
 ===== telegram_observer.py =====
 
 
-# telegram_observer.py
 from observer import Observer
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
+from telegram import Bot
 from datetime import datetime
-import threading
-import asyncio
+
+# --- Настройки Telegram ---
+TELEGRAM_BOT_TOKEN = "8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng"
+TELEGRAM_CHAT_ID = 317217451  # числовой ID чата, куда приходят уведомления
 
 class TelegramObserver(Observer):
-    def __init__(self, token: str, chat_id: str, trader=None):
-        self.chat_id = chat_id
-        self.trader = trader
-
-        # Создаём приложение для polling
-        self.app = Application.builder().token(token).build()
-
-        # Обработчики
-        self.app.add_handler(CommandHandler("start", self.start))
-        self.app.add_handler(CallbackQueryHandler(self.button_handler))
-
-        # Запуск polling в отдельном потоке
-        threading.Thread(target=self.app.run_polling, daemon=True).start()
-
-    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("Бот запущен. Я буду присылать торговые сигналы.")
-
-    async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        await query.answer()
-        action = query.data
-
-        # Вызываем методы трейдера
-        if self.trader:
-            if action == "Открыть позицию":
-                self.trader.open_position("BTC/USDT")
-            elif action == "Закрыть позицию":
-                self.trader.close_position("BTC/USDT")
-
-        await query.edit_message_reply_markup(reply_markup=None)
-        await query.message.reply_text(f"[Paper] Вы выбрали: {action}")
+    def __init__(self):
+        self.bot = Bot(token=TELEGRAM_BOT_TOKEN)
 
     def update(self, data):
-        """Вызывается синхронно из монитора"""
+        # формируем сообщение
         msg = (
             f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M')}] Basket Monitor Update\n"
             f"Signal: {data['signal']}\n"
@@ -318,24 +279,11 @@ class TelegramObserver(Observer):
             f"Basket Price: {data['basket_price']:.2f}\n"
             f"Target Price: {data['target_price']:.2f}"
         )
-
-        keyboard = [
-            [
-                InlineKeyboardButton("Открыть позицию", callback_data="Открыть позицию"),
-                InlineKeyboardButton("Закрыть позицию", callback_data="Закрыть позицию")
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        # Используем run_coroutine_threadsafe, чтобы безопасно вызвать асинхронный метод из синхронного потока
-        asyncio.run_coroutine_threadsafe(
-            self.app.bot.send_message(
-                chat_id=self.chat_id,
-                text=msg,
-                reply_markup=reply_markup
-            ),
-            self.app.loop
-        )
+        try:
+            self.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
+            print("✅ Telegram message sent")
+        except Exception as e:
+            print("❌ Telegram send failed:", e)
 
 
 ===== test_bot.py =====
@@ -348,6 +296,19 @@ async def main():
     bot = Bot(token="8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng")
     me = await bot.get_me()
     print(me)
+
+asyncio.run(main())
+
+
+===== test_send.py =====
+
+
+from telegram import Bot
+import asyncio
+
+async def main():
+    bot = Bot(token="8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng")
+    await bot.send_message(chat_id="317217451", text="✅ Test message from script")
 
 asyncio.run(main())
 
