@@ -3,6 +3,7 @@ from observer import Observer
 import json
 import requests
 from datetime import datetime
+from callback_handler import handle_callback
 
 TELEGRAM_BOT_TOKEN = "8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng"
 TELEGRAM_CHAT_ID = 317217451  # числовой ID чата
@@ -41,7 +42,8 @@ class TelegramObserver(Observer):
 
         buttons = None
         signal = data.get('signal', "")
-        if "LONG" in signal or "SHORT" in signal:
+        # Кнопки для всех сигналов кроме NO DATA
+        if signal and signal != "NO DATA":
             buttons = [
                 [
                     {'text': 'Open Position', 'callback_data': f'OPEN:{signal}'},
