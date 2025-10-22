@@ -1,7 +1,6 @@
 from observer import Observer
 import json
 import requests
-from datetime import datetime
 from callback_handler import handle_callback
 
 TELEGRAM_BOT_TOKEN = "8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng"
@@ -32,9 +31,8 @@ class TelegramObserver(Observer):
         basket_symbols = data.get('basket_symbols', [])
         symbols_text = "\n".join(basket_symbols) if basket_symbols else "—"
 
+        # Сообщение без даты, заголовка и строки Signal
         msg = (
-            f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M')}] Basket Monitor Update\n"
-            f"Signal: {data.get('signal')}\n"
             f"Z-score: {data.get('z', 0):.4f}\n"
             f"Spread: {data.get('spread', 0):.6f}\n"
             f"Basket Price: {data.get('basket_price', 0):.2f}\n"
