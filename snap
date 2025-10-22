@@ -268,14 +268,43 @@ class Subject:
 
 
 from observer import Observer
-from telegram import Bot
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 from datetime import datetime
-import asyncio
+import threading
 
 class TelegramObserver(Observer):
-    def __init__(self, token: str, chat_id: str):
-        self.bot = Bot(token=token)
+    def __init__(self, token: str, chat_id: str, trader=None):
         self.chat_id = chat_id
+        self.trader = trader
+
+        # Создаём приложение для polling
+        self.app = Application.builder().token(token).build()
+
+        # Обработчики
+        self.app.add_handler(CommandHandler("start", self.start))
+        self.app.add_handler(CallbackQueryHandler(self.button_handler))
+
+        # Запуск polling в отдельном потоке
+        threading.Thread(target=self.app.run_polling, daemon=True).start()
+
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("Бот запущен. Я буду присылать торговые сигналы.")
+
+    async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer()
+        action = query.data
+
+        # Вызываем методы трейдера
+        if self.trader:
+            if action == "Открыть позицию":
+                self.trader.open_position("BTC/USDT")
+            elif action == "Закрыть позицию":
+                self.trader.close_position("BTC/USDT")
+
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text(f"[Paper] Вы выбрали: {action}")
 
     def update(self, data):
         msg = (
@@ -286,12 +315,22 @@ class TelegramObserver(Observer):
             f"Basket Price: {data['basket_price']:.2f}\n"
             f"Target Price: {data['target_price']:.2f}"
         )
-        # Отправляем сообщение синхронно через asyncio.run
-        try:
-            asyncio.run(self.bot.send_message(chat_id=self.chat_id, text=msg))
-            print(f"✅ Telegram message sent: {msg[:50]}...")
-        except Exception as e:
-            print(f"❌ Failed to send Telegram message: {e}")
+
+        keyboard = [
+            [
+                InlineKeyboardButton("Открыть позицию", callback_data="Открыть позицию"),
+                InlineKeyboardButton("Закрыть позицию", callback_data="Закрыть позицию")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        self.app.create_task(
+            self.app.bot.send_message(
+                chat_id=self.chat_id,
+                text=msg,
+                reply_markup=reply_markup
+            )
+        )
 
 
 ===== test_bot.py =====
@@ -311,27 +350,37 @@ asyncio.run(main())
 ===== test_trader.py =====
 
 
-# test_trader.py
-
 from monitor import OKXBasketMonitor
 from trader import OKXBasketTrader
 from console_observer import ConsoleObserver
+from telegram_observer import TelegramObserver
+
+# --- Настройки Telegram ---
+TELEGRAM_BOT_TOKEN = "8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng"
+TELEGRAM_CHAT_ID = "317217451"
 
 def main():
-    # Создаем монитор
+    # --- Создаём монитор ---
     monitor = OKXBasketMonitor()
 
-    # Подключаем ConsoleObserver для логов
+    # --- Подключаем ConsoleObserver для логов ---
     console_observer = ConsoleObserver()
     monitor.attach(console_observer)
 
-    # Подключаем трейдер в режиме paper trading
+    # --- Подключаем трейдер в Paper Trading режиме ---
     trader = OKXBasketTrader(paper_trading=True, max_exposure=1000)
     monitor.attach(trader)
 
+    # --- Подключаем TelegramObserver с кнопками ---
+    telegram_observer = TelegramObserver(
+        token=TELEGRAM_BOT_TOKEN,
+        chat_id=TELEGRAM_CHAT_ID,
+        trader=trader
+    )
+    monitor.attach(telegram_observer)
+
     print("✅ Starting monitor + trader in PAPER TRADING mode...")
-    # Запускаем монитор (он будет уведомлять трейдера)
-    monitor.run(interval_minutes=1)  # маленький интервал для теста
+    monitor.run(interval_minutes=1)  # короткий интервал для теста
 
 if __name__ == "__main__":
     main()
@@ -339,8 +388,6 @@ if __name__ == "__main__":
 
 ===== trader.py =====
 
-
-# trader.py
 
 from observer import Observer
 import logging
@@ -369,10 +416,23 @@ class OKXBasketTrader(Observer):
     def execute_signal(self, signal, data):
         """
         Пока просто выводит, что будет сделано.
-        На следующем шаге сюда будем добавлять реальные ордера.
         """
         if self.paper_trading:
             logger.info(f"[PAPER TRADING] Signal received: {signal}")
             logger.info(f"[PAPER TRADING] Data: {data}")
         else:
             logger.info(f"[REAL TRADING] Would execute: {signal}")
+
+    # --- Методы для кнопок ---
+    def open_position(self, symbol: str, size=None):
+        if size is None:
+            size = self.max_exposure
+        self.current_positions[symbol] = size
+        logger.info(f"[PAPER TRADING] Opened position {symbol} with size {size}")
+
+    def close_position(self, symbol: str):
+        if symbol in self.current_positions:
+            del self.current_positions[symbol]
+            logger.info(f"[PAPER TRADING] Closed position {symbol}")
+        else:
+            logger.info(f"[PAPER TRADING] No open position to close for {symbol}")
