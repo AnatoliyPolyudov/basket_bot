@@ -1,11 +1,10 @@
-# telegram_observer.py
 from observer import Observer
 from telegram import Bot
 from datetime import datetime
 
 # --- Настройки Telegram ---
 TELEGRAM_BOT_TOKEN = "8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng"
-TELEGRAM_CHAT_ID = "317217451"  # строка или число — Telegram воспринимает оба варианта
+TELEGRAM_CHAT_ID = "317217451"  # строка или число — работает оба варианта
 
 class TelegramObserver(Observer):
     def __init__(self):
@@ -13,8 +12,7 @@ class TelegramObserver(Observer):
 
     def update(self, data):
         """
-        Вызывается синхронно из монитора.
-        Формирует сообщение и отправляет в Telegram.
+        Отправка уведомления в Telegram.
         """
         try:
             msg = (
