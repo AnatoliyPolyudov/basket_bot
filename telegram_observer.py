@@ -3,7 +3,6 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 from datetime import datetime
 import threading
-import asyncio
 
 class TelegramObserver(Observer):
     def __init__(self, token: str, chat_id: str, trader=None):
@@ -13,7 +12,7 @@ class TelegramObserver(Observer):
         # Создаём приложение для polling
         self.app = Application.builder().token(token).build()
 
-        # Обработчики
+        # Обработчики команд и кнопок
         self.app.add_handler(CommandHandler("start", self.start))
         self.app.add_handler(CallbackQueryHandler(self.button_handler))
 
@@ -28,7 +27,7 @@ class TelegramObserver(Observer):
         await query.answer()
         action = query.data
 
-        # Вызываем методы трейдера
+        # Взаимодействие с трейдером
         if self.trader:
             if action == "Открыть позицию":
                 self.trader.open_position("BTC/USDT")
@@ -57,23 +56,11 @@ class TelegramObserver(Observer):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # --- безопасный вызов асинхронного метода из синхронного потока ---
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # Если уже есть работающий loop (например, в Jupyter или другом приложении)
-            loop.create_task(
-                self.app.bot.send_message(
-                    chat_id=self.chat_id,
-                    text=msg,
-                    reply_markup=reply_markup
-                )
+        # --- безопасная отправка сообщения через loop приложения ---
+        self.app.create_task(
+            self.app.bot.send_message(
+                chat_id=self.chat_id,
+                text=msg,
+                reply_markup=reply_markup
             )
-        else:
-            # Если нет запущенного loop — создаём временный
-            asyncio.run(
-                self.app.bot.send_message(
-                    chat_id=self.chat_id,
-                    text=msg,
-                    reply_markup=reply_markup
-                )
-            )
+        )
