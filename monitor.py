@@ -6,7 +6,7 @@ import logging
 from datetime import datetime
 from observer import Subject
 from console_observer import ConsoleObserver
-from telegram_observer import TelegramObserver
+from telegram_observer import TelegramObserver  # упрощённый, синхронный
 
 # Logging setup
 logging.basicConfig(
@@ -161,7 +161,6 @@ Status: {"NORMAL" if abs(z)<0.5 else "WATCH" if abs(z)<2 else "SIGNAL"}
 """
                     print(report)
 
-                    # --- Отладка: печатаем данные перед уведомлением ---
                     data_to_notify = {
                         "time": datetime.utcnow(),
                         "target_price": prices[self.target],
@@ -215,7 +214,6 @@ def main():
         print("✅ Test message queued for Telegram")
     except Exception as e:
         print("❌ Failed to queue test message:", e)
-    # -----------------------------------
 
     monitor.run(interval_minutes=5)
 
