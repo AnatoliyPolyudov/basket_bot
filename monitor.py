@@ -6,9 +6,8 @@ import logging
 from datetime import datetime
 from observer import Subject
 from console_observer import ConsoleObserver
-from telegram_observer import TelegramObserver  # синхронный, без asyncio
+from telegram_observer import TelegramObserver
 
-# Logging setup
 logging.basicConfig(
     level=logging.INFO,
     format="%(message)s",
@@ -126,7 +125,7 @@ class OKXBasketMonitor(Subject):
         if abs(z) < 0.5: return "EXIT POSITION"
         return "HOLD"
 
-    def run(self, interval_minutes=1):  # короткий интервал для теста
+    def run(self, interval_minutes=1):
         logger.info("Starting OKX basket monitor...")
         if not self.fetch_historical_data():
             logger.error("Failed to fetch historical data.")
@@ -161,7 +160,7 @@ Status: {"NORMAL" if abs(z)<0.5 else "WATCH" if abs(z)<2 else "SIGNAL"}
 """
                     print(report)
 
-                    # уведомляем наблюдателей (Telegram, Console и др.)
+                    # уведомляем всех наблюдателей
                     self.notify({
                         "time": datetime.utcnow(),
                         "target_price": prices[self.target],
@@ -187,14 +186,10 @@ Status: {"NORMAL" if abs(z)<0.5 else "WATCH" if abs(z)<2 else "SIGNAL"}
 
 def main():
     monitor = OKXBasketMonitor()
-
-    # Console logging
     monitor.attach(ConsoleObserver())
-
-    # Telegram notifications
     monitor.attach(TelegramObserver())
 
-    # Тестовое сообщение при старте
+    # тестовое сообщение
     monitor.notify({
         "signal": "✅ Test message: TelegramObserver работает!",
         "z": 0,
@@ -203,7 +198,7 @@ def main():
         "target_price": 0
     })
 
-    monitor.run(interval_minutes=1)  # короткий интервал для теста
+    monitor.run(interval_minutes=1)
 
 
 if __name__ == "__main__":
