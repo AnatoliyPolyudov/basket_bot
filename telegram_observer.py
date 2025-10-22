@@ -46,7 +46,6 @@ class TelegramObserver(Observer):
 
     def update(self, data):
         """Получает сигнал от монитора и отправляет сообщение с кнопками"""
-
         msg = (
             f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M')}] Basket Monitor Update\n"
             f"Signal: {data['signal']}\n"
@@ -64,9 +63,10 @@ class TelegramObserver(Observer):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Используем create_task на уже работающем loop приложения, чтобы избежать asyncio.run() ошибок
-        if self.app.application:
-            self.app.create_task(
+        # Используем loop бота, чтобы ставить задачу отправки сообщения
+        loop = self.app.bot.loop
+        if loop.is_running():
+            loop.create_task(
                 self.bot.send_message(
                     chat_id=self.chat_id,
                     text=msg,
