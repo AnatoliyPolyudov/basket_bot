@@ -1,5 +1,3 @@
-# test_trader.py
-
 from monitor import OKXBasketMonitor
 from trader import OKXBasketTrader
 from console_observer import ConsoleObserver
@@ -17,7 +15,7 @@ def main():
     console_observer = ConsoleObserver()
     monitor.attach(console_observer)
 
-    # --- Подключаем трейдер в режиме Paper Trading ---
+    # --- Подключаем трейдер в Paper Trading режиме ---
     trader = OKXBasketTrader(paper_trading=True, max_exposure=1000)
     monitor.attach(trader)
 
@@ -25,13 +23,12 @@ def main():
     telegram_observer = TelegramObserver(
         token=TELEGRAM_BOT_TOKEN,
         chat_id=TELEGRAM_CHAT_ID,
-        trader=trader  # передаём трейдера для кнопок
+        trader=trader
     )
     monitor.attach(telegram_observer)
 
     print("✅ Starting monitor + trader in PAPER TRADING mode...")
-    # Запускаем монитор с коротким интервалом для теста
-    monitor.run(interval_minutes=1)
+    monitor.run(interval_minutes=1)  # короткий интервал для теста
 
 if __name__ == "__main__":
     main()
