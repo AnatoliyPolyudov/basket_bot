@@ -72,10 +72,6 @@ class OKXBasketMonitor(Subject):
         self.historical_data = {}
         self.lookback_days = 30
 
-    # -------------------
-    # Методы класса
-    # -------------------
-
     def fetch_historical_data(self):
         logger.info("Fetching historical data from OKX...")
         for symbol in [self.target] + self.basket_symbols:
@@ -172,9 +168,6 @@ class OKXBasketMonitor(Subject):
         if abs(z) < 0.5: return "EXIT POSITION"
         return "HOLD"
 
-    # -------------------
-    # Основной цикл
-    # -------------------
     def run(self, interval_minutes=1):
         logger.info("Starting OKX basket monitor...")
         if not self.fetch_historical_data():
@@ -186,7 +179,28 @@ class OKXBasketMonitor(Subject):
             return
         logger.info(f"Monitoring symbols: {self.basket_symbols}")
 
-        last_telegram_time = datetime.utcnow() - timedelta(minutes=10)  # сразу можно отправить
+        last_telegram_time = datetime.utcnow() - timedelta(minutes=10)
+
+        # --- первое актуальное сообщение ---
+        prices = self.get_current_prices()
+        if prices:
+            z, spread, stats = self.calculate_zscore(prices)
+            mean, std = stats if stats else (0, 0)
+            signal = self.trading_signal(z)
+            report_data = {
+                "time": datetime.utcnow(),
+                "target_price": prices.get(self.target, 0),
+                "basket_price": self.calculate_basket_price(prices),
+                "spread": spread if spread else 0,
+                "mean": mean,
+                "std": std,
+                "z": z if z else 0,
+                "signal": signal,
+                "basket_symbols": self.basket_symbols,
+                "basket_weights": self.basket_weights
+            }
+            self.notify(report_data)
+            last_telegram_time = datetime.utcnow()
 
         while True:
             try:
@@ -213,7 +227,6 @@ class OKXBasketMonitor(Subject):
                         "basket_weights": self.basket_weights
                     }
 
-                    # уведомления Telegram не чаще 10 минут
                     if datetime.utcnow() - last_telegram_time >= timedelta(minutes=10):
                         self.notify(report_data)
                         last_telegram_time = datetime.utcnow()
@@ -229,9 +242,6 @@ class OKXBasketMonitor(Subject):
                 time.sleep(60)
 
 
-# -------------------
-# Telegram polling
-# -------------------
 def telegram_polling(trader):
     TELEGRAM_BOT_TOKEN = "8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng"
     offset = None
@@ -253,36 +263,19 @@ def telegram_polling(trader):
             time.sleep(5)
 
 
-# -------------------
-# Main
-# -------------------
 def main():
     monitor = OKXBasketMonitor()
 
-    # Console logs
     monitor.attach(ConsoleObserver())
 
-    # Paper trading
     trader = OKXBasketTrader(paper_trading=True, max_exposure=1000)
     monitor.attach(trader)
 
-    # Telegram notifications
     telegram_observer = TelegramObserver(trader=trader)
     monitor.attach(telegram_observer)
 
-    # Telegram polling
     polling_thread = threading.Thread(target=telegram_polling, args=(trader,), daemon=True)
     polling_thread.start()
-
-    # Тестовое сообщение при старте
-    monitor.notify({
-        "signal": "✅ Test message: TelegramObserver работает!",
-        "z": 0,
-        "spread": 0,
-        "basket_price": 0,
-        "target_price": 0,
-        "basket_symbols": monitor.basket_symbols
-    })
 
     monitor.run(interval_minutes=1)
 
@@ -321,7 +314,6 @@ class Subject:
 ===== telegram_observer.py =====
 
 
-# telegram_observer.py
 from observer import Observer
 import json
 import requests
@@ -329,7 +321,7 @@ from datetime import datetime
 from callback_handler import handle_callback
 
 TELEGRAM_BOT_TOKEN = "8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng"
-TELEGRAM_CHAT_ID = 317217451  # числовой ID чата
+TELEGRAM_CHAT_ID = 317217451
 
 class TelegramObserver(Observer):
     def __init__(self, trader=None):
@@ -353,19 +345,21 @@ class TelegramObserver(Observer):
             print("❌ Telegram send failed:", e)
 
     def update(self, data):
-        # формируем текст сообщения
+        basket_symbols = data.get('basket_symbols', [])
+        symbols_text = "\n".join(basket_symbols) if basket_symbols else "—"
+
         msg = (
             f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M')}] Basket Monitor Update\n"
             f"Signal: {data.get('signal')}\n"
             f"Z-score: {data.get('z', 0):.4f}\n"
             f"Spread: {data.get('spread', 0):.6f}\n"
             f"Basket Price: {data.get('basket_price', 0):.2f}\n"
-            f"Target Price: {data.get('target_price', 0):.2f}"
+            f"Target Price: {data.get('target_price', 0):.2f}\n"
+            f"Current pairs:\n{symbols_text}"
         )
 
         buttons = None
         signal = data.get('signal', "")
-        # Кнопки для всех сигналов кроме NO DATA
         if signal and signal != "NO DATA":
             buttons = [
                 [
