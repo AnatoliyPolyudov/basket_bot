@@ -5,6 +5,10 @@ from trader import OKXBasketTrader
 from console_observer import ConsoleObserver
 from telegram_observer import TelegramObserver
 
+# --- Настройки Telegram ---
+TELEGRAM_BOT_TOKEN = "8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng"
+TELEGRAM_CHAT_ID = "317217451"
+
 def main():
     # --- Создаём монитор ---
     monitor = OKXBasketMonitor()
@@ -19,10 +23,15 @@ def main():
 
     # --- Подключаем TelegramObserver с кнопками ---
     telegram_observer = TelegramObserver(
-        token="YOUR_TELEGRAM_BOT_TOKEN",
-        chat_id="YOUR_CHAT_ID",
+        token=TELEGRAM_BOT_TOKEN,
+        chat_id=TELEGRAM_CHAT_ID,
         trader=trader  # передаём трейдера для кнопок
     )
     monitor.attach(telegram_observer)
 
     print("✅ Starting monitor + trader in PAPER TRADING mode...")
+    # Запускаем монитор с коротким интервалом для теста
+    monitor.run(interval_minutes=1)
+
+if __name__ == "__main__":
+    main()
