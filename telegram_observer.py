@@ -1,8 +1,10 @@
+# telegram_observer.py
 from observer import Observer
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 from datetime import datetime
 import threading
+import asyncio
 
 class TelegramObserver(Observer):
     def __init__(self, token: str, chat_id: str, trader=None):
@@ -38,6 +40,7 @@ class TelegramObserver(Observer):
         await query.message.reply_text(f"[Paper] Вы выбрали: {action}")
 
     def update(self, data):
+        """Вызывается синхронно из монитора"""
         msg = (
             f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M')}] Basket Monitor Update\n"
             f"Signal: {data['signal']}\n"
@@ -55,10 +58,12 @@ class TelegramObserver(Observer):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        self.app.create_task(
+        # Используем run_coroutine_threadsafe, чтобы безопасно вызвать асинхронный метод из синхронного потока
+        asyncio.run_coroutine_threadsafe(
             self.app.bot.send_message(
                 chat_id=self.chat_id,
                 text=msg,
                 reply_markup=reply_markup
-            )
+            ),
+            self.app.loop
         )
