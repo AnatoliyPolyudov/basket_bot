@@ -57,10 +57,11 @@ class TelegramObserver(Observer):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Отправляем через self.app.bot
-        # PTB v20+ автоматически создаёт loop, не нужно asyncio.run()
-        self.app.create_task(self.app.bot.send_message(
-            chat_id=self.chat_id,
-            text=msg,
-            reply_markup=reply_markup
-        ))
+        # Отправляем сообщение через self.app.bot
+        self.app.create_task(
+            self.app.bot.send_message(
+                chat_id=self.chat_id,
+                text=msg,
+                reply_markup=reply_markup
+            )
+        )
