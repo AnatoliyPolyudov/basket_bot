@@ -8,10 +8,10 @@ TELEGRAM_CHAT_ID = 317217451  # числовой ID чата, куда прих�
 
 class TelegramObserver(Observer):
     def __init__(self):
-        self.chat_id = TELEGRAM_CHAT_ID
         self.bot = Bot(token=TELEGRAM_BOT_TOKEN)
 
     def update(self, data):
+        # формируем сообщение
         msg = (
             f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M')}] Basket Monitor Update\n"
             f"Signal: {data['signal']}\n"
@@ -21,6 +21,7 @@ class TelegramObserver(Observer):
             f"Target Price: {data['target_price']:.2f}"
         )
         try:
-            self.bot.send_message(chat_id=self.chat_id, text=msg)
+            self.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
+            print("✅ Telegram message sent")
         except Exception as e:
             print("❌ Telegram send failed:", e)
