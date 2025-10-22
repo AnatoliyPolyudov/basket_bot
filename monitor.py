@@ -24,7 +24,7 @@ class OKXBasketMonitor(Subject):
             "sandbox": False
         })
         self.target = "BTC/USDT:USDT"
-        self.basket_symbols = ["ETH/USDT:USDT","BNB/USDT:USDT","SOL/USDT:USDT","XRP/USDT:USDT"]
+        self.basket_symbols = ["ETH/USDT:USDT","BNB/USDT:USDT","SOL/USDT:USDT"]
         self.basket_weights = []
         self.historical_data = {}
         self.lookback_days = 30
