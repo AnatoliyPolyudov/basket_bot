@@ -26,7 +26,6 @@ class SimpleBasketMonitor(Subject):
         })
         self.target = "BTC/USDT:USDT"
         
-        # ПРОСТАЯ КОРЗИНА - как в R коде
         self.basket_symbols = [
             "DOGE/USDT:USDT", "XRP/USDT:USDT", "AVAX/USDT:USDT",
             "SOL/USDT:USDT", "DOT/USDT:USDT", "ADA/USDT:USDT",
@@ -35,18 +34,30 @@ class SimpleBasketMonitor(Subject):
         
         self.historical_data = {}
         self.timeframe = "15m"
-        self.lookback_bars = 672  # 7 дней в 15-минутках
+        self.lookback_bars = 672
         self.data_loaded = False
         
-    def force_data_reload(self):
-        """ПРИНУДИТЕЛЬНЫЙ СБРОС и перезагрузка исторических данных"""
-        logger.info("🔄 FORCING HISTORICAL DATA RELOAD...")
-        self.historical_data = {}  # Полный сброс
+    def complete_data_reset(self):
+        """ПОЛНЫЙ СБРОС всех данных и перезагрузка"""
+        logger.info("🗑️ COMPLETE DATA RESET INITIATED...")
+        
+        self.historical_data = {}
         self.data_loaded = False
-        return self.fetch_historical_data()
+        
+        if self.fetch_historical_data():
+            logger.info("✅ COMPLETE RESET SUCCESSFUL - Fresh data loaded")
+            
+            spread_stats = self.calculate_spread_stats()
+            if spread_stats:
+                mean, std = spread_stats
+                logger.info(f"📊 NEW SPREAD STATS: mean={mean:.3f}, std={std:.3f}")
+            return True
+        else:
+            logger.error("❌ COMPLETE RESET FAILED")
+            return False
         
     def fetch_historical_data(self):
-        """ПРОСТАЯ загрузка данных с принудительным обновлением"""
+        """Загрузка исторических данных"""
         if self.data_loaded:
             logger.info("📊 Historical data already loaded, skipping...")
             return True
@@ -58,7 +69,7 @@ class SimpleBasketMonitor(Subject):
             try:
                 ohlcv = self.exchange.fetch_ohlcv(symbol, self.timeframe, limit=self.lookback_bars)
                 if ohlcv and len(ohlcv) >= 100:
-                    self.historical_data[symbol] = [c[4] for c in ohlcv]  # только цены закрытия
+                    self.historical_data[symbol] = [c[4] for c in ohlcv]
                     success_count += 1
                     logger.info(f"✅ Loaded {len(self.historical_data[symbol])} bars for {symbol}")
                 else:
@@ -66,19 +77,12 @@ class SimpleBasketMonitor(Subject):
             except Exception as e:
                 logger.warning(f"❌ Error loading {symbol}: {e}")
         
-        # Проверяем что достаточно данных
         valid_symbols = [s for s in [self.target] + self.basket_symbols 
                         if s in self.historical_data and len(self.historical_data[s]) >= 100]
         
         if len(valid_symbols) >= 4:
             self.data_loaded = True
             logger.info(f"🎯 Successfully loaded {success_count} symbols")
-            
-            # Сразу покажем статистику спреда
-            spread_stats = self.calculate_spread_stats()
-            if spread_stats:
-                mean, std = spread_stats
-                logger.info(f"📊 INITIAL SPREAD STATS: mean={mean:.3f}, std={std:.3f}")
             return True
         else:
             logger.error(f"❌ Not enough valid symbols: {len(valid_symbols)}/4")
@@ -93,10 +97,9 @@ class SimpleBasketMonitor(Subject):
 
     def calculate_spread(self, current_prices=None):
         """
-        ПРАВИЛЬНЫЙ метод по R коду: отношение обычных цен (НЕ логарифм!)
+        ПРАВИЛЬНЫЙ метод по R коду: отношение обычных цен
         """
         if current_prices:
-            # ТЕКУЩИЙ СПРЕД: BTC цена / средняя цена альтов
             btc_price = current_prices[self.target]
             alt_prices = [current_prices[s] for s in self.basket_symbols if s in current_prices]
             
@@ -107,12 +110,10 @@ class SimpleBasketMonitor(Subject):
             if avg_alt_price <= 0:
                 return None
                 
-            # ОТНОШЕНИЕ ЦЕН КАК В R КОДЕ!
             spread = btc_price / avg_alt_price
             return spread
             
         else:
-            # ИСТОРИЧЕСКИЙ СПРЕД
             min_len = min(len(self.historical_data[s]) for s in [self.target] + self.basket_symbols 
                          if s in self.historical_data)
             
@@ -132,25 +133,19 @@ class SimpleBasketMonitor(Subject):
             alt_prices_matrix = np.array(alt_prices_matrix)
             avg_alt_prices = np.mean(alt_prices_matrix, axis=0)
             
-            # ОТНОШЕНИЕ ЦЕН КАК В R КОДЕ!
             spread = btc_prices / avg_alt_prices
             return spread
 
     def calculate_zscore(self, current_prices):
-        """
-        ПРОСТОЙ Z-score как в R коде
-        """
-        # 1. Текущий спред
+        """Z-score как в R коде"""
         current_spread = self.calculate_spread(current_prices)
         if current_spread is None:
             return None, None, None
             
-        # 2. Исторический спред
         historical_spread = self.calculate_spread()
         if historical_spread is None or len(historical_spread) < 100:
             return None, None, None
             
-        # 3. Z-score
         mean = np.mean(historical_spread)
         std = np.std(historical_spread)
         
@@ -163,7 +158,7 @@ class SimpleBasketMonitor(Subject):
         return z, current_spread, (mean, std)
 
     def get_current_prices(self):
-        """Простое получение текущих цен"""
+        """Получение текущих цен"""
         try:
             symbols = [self.target] + self.basket_symbols
             tickers = self.exchange.fetch_tickers(symbols)
@@ -182,13 +177,10 @@ class SimpleBasketMonitor(Subject):
             return None
 
     def trading_signal(self, z):
-        """
-        ПРОСТАЯ логика сигналов с вашими агрессивными параметрами
-        """
+        """Логика сигналов с агрессивными параметрами"""
         if z is None:
             return "NO DATA"
             
-        # ВАШИ АГРЕССИВНЫЕ ПОРОГИ - НЕ МЕНЯЕМ!
         if z > 0.6:
             return "SHORT BTC / LONG BASKET"
         if z < -0.6:
@@ -199,15 +191,15 @@ class SimpleBasketMonitor(Subject):
         return "HOLD"
 
     def run(self, interval_minutes=1):
-        """Простой основной цикл с автокоррекцией"""
+        """Основной цикл с автокоррекцией"""
         logger.info("🚀 Starting ULTIMATE R-CODE BASED MONITOR...")
         
-        # ПРИНУДИТЕЛЬНАЯ ЗАГРУЗКА ДАННЫХ
-        if not self.force_data_reload():
-            logger.error("❌ CRITICAL: Failed to load historical data")
+        logger.info("🔥 PERFORMING COMPLETE DATA RESET BEFORE START...")
+        if not self.complete_data_reset():
+            logger.error("❌ CRITICAL: Complete data reset failed")
             return
             
-        logger.info(f"🎯 Monitoring {len(self.basket_symbols)} symbols: {[s.split('/')[0] for s in self.basket_symbols]}")
+        logger.info(f"🎯 Monitoring {len(self.basket_symbols)} symbols with FRESH data")
         
         consecutive_bad_z = 0
         
@@ -223,14 +215,13 @@ class SimpleBasketMonitor(Subject):
                 
                 current_time = datetime.utcnow().strftime('%H:%M:%S')
                 
-                # АВТОМАТИЧЕСКАЯ КОРРЕКЦИЯ АНОМАЛЬНЫХ Z-SCORE
                 if z is not None and abs(z) > 3.0:
                     consecutive_bad_z += 1
                     logger.warning(f"🚨 ABNORMAL Z-score: {z:.2f} (consecutive: {consecutive_bad_z})")
                     
-                    if consecutive_bad_z >= 2:  # После 2 плохих Z-score подряд
+                    if consecutive_bad_z >= 2:
                         logger.info("🔄 AUTO-CORRECTING: Reloading historical data...")
-                        if self.force_data_reload():
+                        if self.complete_data_reset():
                             consecutive_bad_z = 0
                             continue
                 else:
@@ -242,7 +233,6 @@ class SimpleBasketMonitor(Subject):
                 else:
                     logger.info(f"[{current_time}] Z: NO DATA | Signal: {signal}")
                 
-                # Отправляем данные наблюдателям
                 report_data = {
                     "time": datetime.utcnow(),
                     "target_price": prices[self.target],
@@ -265,7 +255,6 @@ class SimpleBasketMonitor(Subject):
 
 
 def telegram_polling(trader):
-    """Telegram polling (оставляем как есть)"""
     TELEGRAM_BOT_TOKEN = "8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng"
     offset = None
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
@@ -287,7 +276,6 @@ def telegram_polling(trader):
 
 
 def main():
-    """Простой запуск"""
     monitor = SimpleBasketMonitor()
     monitor.attach(ConsoleObserver())
 
