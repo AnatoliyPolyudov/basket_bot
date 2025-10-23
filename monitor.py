@@ -24,9 +24,13 @@ class OKXBasketMonitor(Subject):
             "options": {"defaultType": "swap"},
             "sandbox": False
         })
-        self.target = "SOL/USDT:USDT"
-        # Meme basket instead of regular alts
-        self.basket_symbols = ["DOGE/USDT:USDT", "AVAX/USDT:USDT", "ATOM/USDT:USDT", "NEAR/USDT:USDT"]
+        self.target = "BTC/USDT:USDT"
+        self.basket_symbols = [
+        "DOGE/USDT:USDT",    # Мем (BTC форк)
+        "ADA/USDT:USDT",     # Academic подход (контраст)
+        "XRP/USDT:USDT",     # Банковский (полная противоположность)
+        "PEPE/USDT:USDT"     # Pure meme (экстремальная волатильность)
+]
         self.basket_weights = []
         self.historical_data = {}
         self.lookback_days = 30
