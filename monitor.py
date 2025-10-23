@@ -35,7 +35,7 @@ class SimpleBasketMonitor(Subject):
             "AVAX/USDT:USDT",     # ~$30
             "DOT/USDT:USDT",      # ~$6
             "LINK/USDT:USDT",     # ~$15
-            "MATICUSDT:USDT"     # ~$0.70
+            "TRX/USDT:USDT"     # ~$0.70
         ]
         
         self.historical_data = {}
