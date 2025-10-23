@@ -27,37 +27,49 @@ class OKXBasketMonitor(Subject):
         self.target = "BTC/USDT:USDT"
         self.basket_symbols = [
             "PEPE/USDT:USDT",
-            "ADA/USDT:USDT",
+            "ADA/USDT:USDT", 
             "LINK/USDT:USDT",
             "SAND/USDT:USDT"
         ]
         self.basket_weights = []
         self.historical_data = {}
-        # ИЗМЕНЕНИЕ: часовые данные вместо дневных
-        self.timeframe = "1h"           # часовой таймфрейм
-        self.lookback_bars = 168        # 168 часов = 7 дней
+        # ИЗМЕНЕНИЕ: 15-минутные данные вместо часовых
+        self.timeframe = "15m"           # 15-минутный таймфрейм
+        self.lookback_bars = 672         # 672 * 15m = 7 дней (672 = 24ч * 7д / 0.25ч)
         self.normalization_factors = {}
+        self.last_data_update = None
+        self.data_update_interval = timedelta(hours=1)  # Обновлять исторические данные каждый час
 
     def fetch_historical_data(self):
-        logger.info("Fetching HOURLY historical data from OKX...")
+        logger.info("Fetching 15-MINUTE historical data from OKX...")
         for symbol in [self.target] + self.basket_symbols:
             try:
-                # ИЗМЕНЕНИЕ: используем часовые данные с limit
+                # ИЗМЕНЕНИЕ: используем 15-минутные данные
                 ohlcv = self.exchange.fetch_ohlcv(symbol, self.timeframe, limit=self.lookback_bars)
                 if not ohlcv:
                     logger.warning(f"No data for {symbol}")
                     continue
                 self.historical_data[symbol] = [c[4] for c in ohlcv]
-                logger.info(f"Loaded {len(self.historical_data[symbol])} hours for {symbol}")
+                logger.info(f"Loaded {len(self.historical_data[symbol])} 15min bars for {symbol}")
             except Exception as e:
                 logger.warning(f"Error loading {symbol}: {e}")
 
-        # ИЗМЕНЕНИЕ: минимум 24 часа данных вместо 20 дней
-        valid = [s for s in [self.target] + self.basket_symbols if s in self.historical_data and len(self.historical_data[s]) >= 24]
+        # ИЗМЕНЕНИЕ: минимум 96 бар (24 часа) вместо 24 часов
+        min_bars_required = 96  # 24 часа * 4 бара в час
+        valid = [s for s in [self.target] + self.basket_symbols 
+                if s in self.historical_data and len(self.historical_data[s]) >= min_bars_required]
         if len(valid) < 3:
             logger.error("Not enough valid symbols for analysis.")
             return False
+        
+        self.last_data_update = datetime.utcnow()
         return True
+
+    def should_update_historical_data(self):
+        """Проверяем, нужно ли обновить исторические данные"""
+        if self.last_data_update is None:
+            return True
+        return datetime.utcnow() - self.last_data_update > self.data_update_interval
 
     def calculate_basket_weights(self):
         correlations = []
@@ -135,8 +147,8 @@ class OKXBasketMonitor(Subject):
 
     def calculate_spread_series(self):
         min_len = min(len(self.historical_data[s]) for s in [self.target] + self.basket_symbols if s in self.historical_data)
-        # ИЗМЕНЕНИЕ: минимум 24 часа вместо 20 дней
-        if min_len < 24:
+        # ИЗМЕНЕНИЕ: минимум 96 бар вместо 24 часов
+        if min_len < 96:
             return None
             
         target_prices = np.array(self.historical_data[self.target][-min_len:])
@@ -189,7 +201,7 @@ class OKXBasketMonitor(Subject):
         return "HOLD"
 
     def run(self, interval_minutes=1):
-        logger.info("Starting OKX basket monitor...")
+        logger.info("Starting OKX basket monitor with 15m data...")
         sys.stdout.flush()
 
         if not self.fetch_historical_data():
@@ -206,6 +218,12 @@ class OKXBasketMonitor(Subject):
 
         while True:
             try:
+                # Периодическое обновление исторических данных
+                if self.should_update_historical_data():
+                    logger.info("Updating historical data...")
+                    if self.fetch_historical_data():
+                        self.calculate_basket_weights()
+                
                 prices = self.get_current_prices()
                 if not prices:
                     time.sleep(60)
@@ -231,7 +249,8 @@ class OKXBasketMonitor(Subject):
                         "z": z if z else 0,
                         "signal": signal,
                         "basket_symbols": self.basket_symbols,
-                        "basket_weights": self.basket_weights
+                        "basket_weights": self.basket_weights,
+                        "timeframe": "15m"  # Добавляем информацию о таймфрейме
                     }
                     self.notify(report_data)
                     last_telegram_time = datetime.utcnow()
