@@ -1,169 +1,135 @@
 import ccxt
-import pandas as pd
 import time
+import pandas as pd
 from datetime import datetime
 
-class SpreadAnalyzer:
+class FundingArbitrageMonitor:
     def __init__(self):
         self.exchanges = {
-            'binance': ccxt.binance(),
-            'okx': ccxt.okx(),
-            'bybit': ccxt.bybit(),
-            'kucoin': ccxt.kucoin(),
-            'gateio': ccxt.gateio(),
-            'mexc': ccxt.mexc()
+            'binance': ccxt.binance({'options': {'defaultType': 'future'}}),
+            'bybit': ccxt.bybit({'options': {'defaultType': 'future'}}),
+            'okx': ccxt.okx({'options': {'defaultType': 'future'}}),
+            'gate': ccxt.gateio({'options': {'defaultType': 'future'}})
         }
         
-        self.symbols = [
-            'BTC/USDT', 'ETH/USDT', 'SOL/USDT',
-            'XRP/USDT', 'ADA/USDT', 'DOT/USDT'
-        ]
+        self.symbols = ["BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT"]
+        self.min_spread = 0.0003  # 0.03%
+        self.opportunities_history = []
 
-    def fetch_prices(self):
-        """Получаем цены со всех бирж"""
-        prices = {}
+    def fetch_funding_rates(self):
+        """Получаем funding rates со всех бирж"""
+        funding_data = {}
         
         for exchange_name, exchange in self.exchanges.items():
             try:
-                prices[exchange_name] = {}
-                print(f"🔍 Загружаем данные с {exchange_name}...")
-                
+                funding_data[exchange_name] = {}
                 for symbol in self.symbols:
-                    try:
-                        ticker = exchange.fetch_ticker(symbol)
-                        prices[exchange_name][symbol] = {
-                            'bid': ticker['bid'],
-                            'ask': ticker['ask'],
-                            'last': ticker['last'],
-                            'spread_pct': (ticker['ask'] - ticker['bid']) / ticker['bid'] * 100
-                        }
-                    except Exception as e:
-                        print(f"   Ошибка для {symbol} на {exchange_name}: {e}")
-                
-                time.sleep(0.2)  # Rate limit
+                    funding = exchange.fetch_funding_rate(symbol)
+                    funding_data[exchange_name][symbol] = {
+                        'rate': funding['fundingRate'],
+                        'next_funding': funding['nextFundingTime'],
+                        'timestamp': funding['timestamp']
+                    }
+                time.sleep(0.1)  # Rate limit
             except Exception as e:
-                print(f"❌ Ошибка подключения к {exchange_name}: {e}")
+                print(f"Ошибка на {exchange_name}: {e}")
                 
-        return prices
+        return funding_data
 
-    def calculate_arbitrage_opportunities(self, prices):
-        """Рассчитываем арбитражные возможности"""
+    def find_arbitrage_opportunities(self, funding_data):
+        """Находим арбитражные возможности"""
         opportunities = []
         
         for symbol in self.symbols:
-            best_bid = {'exchange': None, 'price': 0}
-            best_ask = {'exchange': None, 'price': float('inf')}
+            rates = {}
             
-            for exchange_name in prices:
-                if symbol in prices[exchange_name]:
-                    price_data = prices[exchange_name][symbol]
-                    
-                    if price_data['ask'] < best_ask['price']:
-                        best_ask = {'exchange': exchange_name, 'price': price_data['ask']}
-                    
-                    if price_data['bid'] > best_bid['price']:
-                        best_bid = {'exchange': exchange_name, 'price': price_data['bid']}
+            # Собираем rates для всех бирж
+            for exchange_name in funding_data:
+                if symbol in funding_data[exchange_name]:
+                    rates[exchange_name] = funding_data[exchange_name][symbol]['rate']
             
-            if (best_bid['exchange'] and best_ask['exchange'] and 
-                best_bid['exchange'] != best_ask['exchange']):
+            if len(rates) >= 2:
+                # Находим максимальную и минимальную ставку
+                max_exchange = max(rates, key=rates.get)
+                min_exchange = min(rates, key=rates.get)
+                spread = rates[max_exchange] - rates[min_exchange]
                 
-                spread_pct = (best_bid['price'] - best_ask['price']) / best_ask['price'] * 100
-                
-                if spread_pct > 0.05:  # Минимальный спред 0.05%
-                    opportunities.append({
+                if abs(spread) > self.min_spread:
+                    opportunity = {
                         'symbol': symbol,
-                        'buy_at': best_ask['exchange'],
-                        'sell_at': best_bid['exchange'],
-                        'buy_price': best_ask['price'],
-                        'sell_price': best_bid['price'],
-                        'spread_pct': spread_pct,
-                        'profit_per_unit': best_bid['price'] - best_ask['price'],
-                        'timestamp': datetime.now()
-                    })
+                        'long_exchange': min_exchange,   # LOW funding - покупаем тут
+                        'short_exchange': max_exchange,  # HIGH funding - шортим тут
+                        'spread': spread,
+                        'long_rate': rates[min_exchange],
+                        'short_rate': rates[max_exchange],
+                        'timestamp': datetime.now(),
+                        'profit_potential': abs(spread) * 100  # в процентах
+                    }
+                    opportunities.append(opportunity)
+                    self.opportunities_history.append(opportunity)
         
-        return sorted(opportunities, key=lambda x: x['spread_pct'], reverse=True)
+        return opportunities
 
-    def analyze_commissions_impact(self, opportunity, capital=1000):
-        """Анализ влияния комиссий на прибыль"""
-        commissions = {
-            'binance': 0.1,
-            'okx': 0.08,
-            'bybit': 0.06,
-            'kucoin': 0.1,
-            'gateio': 0.2,
-            'mexc': 0.2
-        }
+    def calculate_profitability(self, opportunity, capital=1000):
+        """Расчет реальной прибыли с учетом комиссий"""
+        # Комиссии (0.1% на биржах)
+        total_commissions = capital * 0.002  # 0.2% за круг
         
-        buy_commission = commissions.get(opportunity['buy_at'], 0.1)
-        sell_commission = commissions.get(opportunity['sell_at'], 0.1)
+        # Прибыль от funding за 8 часов
+        funding_profit = capital * abs(opportunity['spread'])
         
-        units = capital / opportunity['buy_price']
-        gross_profit = units * opportunity['profit_per_unit']
-        total_commissions = capital * (buy_commission + sell_commission) / 100
-        
-        net_profit = gross_profit - total_commissions
-        net_profit_pct = (net_profit / capital) * 100
+        net_profit = funding_profit - total_commissions
+        roi_per_period = (net_profit / capital) * 100
         
         return {
-            'gross_profit': gross_profit,
-            'total_commissions': total_commissions,
+            'capital': capital,
+            'funding_profit': funding_profit,
+            'commissions': total_commissions,
             'net_profit': net_profit,
-            'net_profit_pct': net_profit_pct,
+            'roi_per_period': roi_per_period,
             'profitable': net_profit > 0
         }
 
-    def monitor_continuous(self, interval=30):
+    def monitor_continuous(self, interval=300):
         """Непрерывный мониторинг"""
-        print("🚀 ЗАПУСК АНАЛИЗА СПРЕДОВ МЕЖДУ БИРЖАМИ...")
-        print("=" * 80)
+        print("🚀 Starting Cross-Exchange Funding Arbitrage Monitor...")
+        print("=" * 70)
         
         while True:
             try:
-                print(f"\n📊 {datetime.now().strftime('%H:%M:%S')} - Обновление данных...")
-                prices = self.fetch_prices()
-                opportunities = self.calculate_arbitrage_opportunities(prices)
+                funding_data = self.fetch_funding_rates()
+                opportunities = self.find_arbitrage_opportunities(funding_data)
                 
-                if opportunities:
-                    print(f"\n🎯 НАЙДЕНО АРБИТРАЖНЫХ ВОЗМОЖНОСТЕЙ: {len(opportunities)}")
-                    print("=" * 80)
+                current_time = datetime.now().strftime('%H:%M:%S')
+                print(f"\n📊 {current_time} - Найдено возможностей: {len(opportunities)}")
+                
+                for opp in opportunities:
+                    profit_data = self.calculate_profitability(opp)
                     
-                    for i, opp in enumerate(opportunities[:5], 1):
-                        profit_analysis = self.analyze_commissions_impact(opp)
-                        
-                        print(f"\n#{i} {opp['symbol']}")
-                        print(f"   📈 КУПИТЬ:  {opp['buy_at']:8} @ ${opp['buy_price']:.4f}")
-                        print(f"   📉 ПРОДАТЬ: {opp['sell_at']:8} @ ${opp['sell_price']:.4f}")
-                        print(f"   📊 Спред: {opp['spread_pct']:.4f}%")
-                        print(f"   💰 Прибыль за единицу: ${opp['profit_per_unit']:.4f}")
-                        
-                        if profit_analysis['profitable']:
-                            print(f"   ✅ ЧИСТАЯ ПРИБЫЛЬ: ${profit_analysis['net_profit']:.2f} ({profit_analysis['net_profit_pct']:.4f}%)")
-                        else:
-                            print(f"   ❌ УБЫТОК: ${abs(profit_analysis['net_profit']):.2f} (комиссии съедают прибыль)")
-                else:
-                    print("\n❌ Арбитражные возможности не найдены (спреды слишком маленькие)")
+                    print(f"\n🎯 {opp['symbol']}")
+                    print(f"   LONG:  {opp['long_exchange']} ({opp['long_rate']:.6f})")
+                    print(f"   SHORT: {opp['short_exchange']} ({opp['short_rate']:.6f})")
+                    print(f"   Spread: {opp['spread']:.6f} ({opp['profit_potential']:.4f}%)")
+                    
+                    if profit_data['profitable']:
+                        print(f"   ✅ PROFIT: ${profit_data['net_profit']:.2f} (ROI: {profit_data['roi_per_period']:.4f}%)")
+                    else:
+                        print(f"   ❌ LOSS: ${abs(profit_data['net_profit']):.2f} (комиссии)")
                 
-                # Сводка по спредам
-                print(f"\n📋 СВОДКА ПО СПРЕДАМ:")
-                for symbol in self.symbols[:3]:  # Только первые 3 для краткости
-                    print(f"\n{symbol}:")
-                    for exchange in ['binance', 'okx', 'bybit']:
-                        if exchange in prices and symbol in prices[exchange]:
-                            spread = prices[exchange][symbol]['spread_pct']
-                            print(f"   {exchange:8}: {spread:.4f}%")
+                if not opportunities:
+                    print("   🤷 No arbitrage opportunities found")
                 
-                print(f"\n⏳ Следующее обновление через {interval} секунд...")
-                print("=" * 80)
+                print(f"\n⏳ Next check in {interval//60} minutes...")
                 time.sleep(interval)
                 
             except KeyboardInterrupt:
-                print("\n🛑 Мониторинг остановлен пользователем")
+                print("\n🛑 Monitoring stopped by user")
                 break
             except Exception as e:
-                print(f"❌ Ошибка: {e}")
-                time.sleep(30)
+                print(f"❌ Error: {e}")
+                time.sleep(60)
 
-# Запуск анализатора
+# Запуск монитора
 if __name__ == "__main__":
-    analyzer = SpreadAnalyzer()
-    analyzer.monitor_continuous(interval=30)
+    monitor = FundingArbitrageMonitor()
+    monitor.monitor_continuous()
