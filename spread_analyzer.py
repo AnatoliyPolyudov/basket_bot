@@ -8,46 +8,41 @@ class FundingArbitrageMonitor:
         self.exchanges = {
             'binance': ccxt.binance({'options': {'defaultType': 'future'}}),
             'bybit': ccxt.bybit({'options': {'defaultType': 'future'}}),
-            'okx': ccxt.okx({'options': {'defaultType': 'future'}}),
+            'okx': ccxt.okx({'options': {'defaultType': 'swap'}}),
             'gate': ccxt.gateio({'options': {'defaultType': 'future'}}),
             'mexc': ccxt.mexc({'options': {'defaultType': 'future'}})
         }
         
-        self.symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+        # ПРАВИЛЬНЫЕ СИМВОЛЫ ДЛЯ КАЖДОЙ БИРЖИ
+        self.symbols_map = {
+            'binance': ["BTC/USDT", "ETH/USDT", "SOL/USDT"],
+            'bybit': ["BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT"],
+            'okx': ["BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT"],
+            'gate': ["BTC/USDT", "ETH/USDT", "SOL/USDT"],
+            'mexc': ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
+        }
+        
         self.min_spread = 0.0003  # 0.03%
         self.opportunities_history = []
 
-    def safe_fetch_funding_rate(self, exchange, symbol):
-        """Безопасное получение funding rate с обработкой ошибок"""
+    def safe_fetch_funding_rate(self, exchange, exchange_name, symbol):
+        """Безопасное получение funding rate"""
         try:
             funding_data = exchange.fetch_funding_rate(symbol)
             
-            # Универсальный парсинг для разных бирж
-            if isinstance(funding_data, dict):
-                rate = funding_data.get('fundingRate')
-                next_time = funding_data.get('nextFundingTime')
-                timestamp = funding_data.get('timestamp')
+            if isinstance(funding_data, dict) and 'fundingRate' in funding_data:
+                rate = funding_data['fundingRate']
+                next_time = funding_data.get('nextFundingTime', 'N/A')
+                timestamp = funding_data.get('timestamp', exchange.milliseconds())
                 
-                if rate is not None:
-                    return {
-                        'rate': float(rate),
-                        'next_funding': next_time,
-                        'timestamp': timestamp
-                    }
-            
-            # Альтернативный метод для некоторых бирж
-            markets = exchange.load_markets()
-            if symbol in markets:
-                market = markets[symbol]
-                if 'funding' in market:
-                    return {
-                        'rate': float(market['funding']['rate']),
-                        'next_funding': market['funding'].get('nextFundingTime'),
-                        'timestamp': exchange.milliseconds()
-                    }
+                return {
+                    'rate': float(rate),
+                    'next_funding': next_time,
+                    'timestamp': timestamp
+                }
                     
         except Exception as e:
-            print(f"    Ошибка для {symbol}: {e}")
+            print(f"    ❌ {symbol}: {str(e)[:80]}")  # Обрезаем длинные ошибки
             
         return None
 
@@ -60,35 +55,46 @@ class FundingArbitrageMonitor:
                 print(f"🔍 Загружаем данные с {exchange_name}...")
                 funding_data[exchange_name] = {}
                 
-                for symbol in self.symbols:
-                    result = self.safe_fetch_funding_rate(exchange, symbol)
+                symbols = self.symbols_map.get(exchange_name, [])
+                
+                for symbol in symbols:
+                    result = self.safe_fetch_funding_rate(exchange, exchange_name, symbol)
                     if result:
                         funding_data[exchange_name][symbol] = result
                         print(f"    ✅ {symbol}: {result['rate']:.6f}")
                     else:
                         print(f"    ❌ {symbol}: не удалось получить данные")
                     
-                    time.sleep(0.2)  # Rate limit
+                    time.sleep(0.3)  # Rate limit
                     
             except Exception as e:
                 print(f"❌ Ошибка подключения к {exchange_name}: {e}")
                 
         return funding_data
 
+    def normalize_symbol(self, symbol):
+        """Нормализуем символ для сравнения между биржами"""
+        return symbol.replace(':USDT', '').replace('/USDT', '')
+
     def find_arbitrage_opportunities(self, funding_data):
         """Находим арбитражные возможности"""
         opportunities = []
         
-        for symbol in self.symbols:
-            rates = {}
-            
-            # Собираем rates для всех бирж
-            for exchange_name in funding_data:
-                if symbol in funding_data[exchange_name]:
-                    rates[exchange_name] = funding_data[exchange_name][symbol]['rate']
-            
+        # Создаем единый список символов для сравнения
+        all_rates = {}
+        
+        for exchange_name in funding_data:
+            for symbol in funding_data[exchange_name]:
+                normalized_symbol = self.normalize_symbol(symbol)
+                if normalized_symbol not in all_rates:
+                    all_rates[normalized_symbol] = {}
+                
+                rate_data = funding_data[exchange_name][symbol]
+                all_rates[normalized_symbol][exchange_name] = rate_data['rate']
+        
+        # Ищем арбитражные возможности
+        for symbol, rates in all_rates.items():
             if len(rates) >= 2:
-                # Находим максимальную и минимальную ставку
                 max_exchange = max(rates, key=rates.get)
                 min_exchange = min(rates, key=rates.get)
                 spread = rates[max_exchange] - rates[min_exchange]
@@ -96,13 +102,13 @@ class FundingArbitrageMonitor:
                 if abs(spread) > self.min_spread:
                     opportunity = {
                         'symbol': symbol,
-                        'long_exchange': min_exchange,   # LOW funding - покупаем тут
-                        'short_exchange': max_exchange,  # HIGH funding - шортим тут
+                        'long_exchange': min_exchange,
+                        'short_exchange': max_exchange,
                         'spread': spread,
                         'long_rate': rates[min_exchange],
                         'short_rate': rates[max_exchange],
                         'timestamp': datetime.now(),
-                        'profit_potential': abs(spread) * 100  # в процентах
+                        'profit_potential': abs(spread) * 100
                     }
                     opportunities.append(opportunity)
                     self.opportunities_history.append(opportunity)
@@ -111,12 +117,8 @@ class FundingArbitrageMonitor:
 
     def calculate_profitability(self, opportunity, capital=1000):
         """Расчет реальной прибыли с учетом комиссий"""
-        # Комиссии (0.1% на биржах)
         total_commissions = capital * 0.002  # 0.2% за круг
-        
-        # Прибыль от funding за 8 часов
         funding_profit = capital * abs(opportunity['spread'])
-        
         net_profit = funding_profit - total_commissions
         roi_per_period = (net_profit / capital) * 100
         
@@ -157,6 +159,7 @@ class FundingArbitrageMonitor:
                             print(f"   ❌ LOSS: ${abs(profit_data['net_profit']):.2f} (комиссии)")
                 else:
                     print("   🤷 No arbitrage opportunities found")
+                    print("   💡 Попробуйте увеличить min_spread или добавить больше бирж")
                 
                 print(f"\n⏳ Next check in {interval} seconds...")
                 print("=" * 70)
