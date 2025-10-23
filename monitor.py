@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import time
 import logging
+import random
 from datetime import datetime, timedelta
 from observer import Subject
 from console_observer import ConsoleObserver
@@ -43,8 +44,54 @@ class OKXBasketMonitor(Subject):
         self.lookback_bars = 672
         self.normalization_factors = {}
         self.last_data_update = None
-        self.data_update_interval = timedelta(hours=1)
-        self.consecutive_hold_signals = 0  # Счетчик подряд идущих HOLD сигналов
+        self.data_update_interval = timedelta(minutes=30)  # УВЕЛИЧЕНА ЧАСТОТА
+        self.consecutive_hold_signals = 0
+        
+        # ДОПОЛНИТЕЛЬНЫЕ ВОЛАТИЛЬНЫЕ АКТИВЫ ДЛЯ РАСШИРЕНИЯ
+        self.volatile_symbols_pool = [
+            "SAND/USDT:USDT", "MANA/USDT:USDT", "GALA/USDT:USDT",
+            "ENJ/USDT:USDT", "CHZ/USDT:USDT", "ALICE/USDT:USDT",
+            "NEAR/USDT:USDT", "ATOM/USDT:USDT", "FTM/USDT:USDT",
+            "APE/USDT:USDT", "GRT/USDT:USDT", "BAT/USDT:USDT"
+        ]
+
+    def expand_basket_temporarily(self):
+        """Временно добавляем волатильные активы при низкой активности"""
+        logger.info("Expanding basket with volatile symbols...")
+        
+        # Добавляем 2 случайных волатильных актива
+        new_symbols = random.sample(self.volatile_symbols_pool, 2)
+        
+        for symbol in new_symbols:
+            if symbol not in self.basket_symbols and len(self.basket_symbols) < 12:
+                try:
+                    ohlcv = self.exchange.fetch_ohlcv(symbol, self.timeframe, limit=96)
+                    if ohlcv and len(ohlcv) >= 96:
+                        self.basket_symbols.append(symbol)
+                        self.historical_data[symbol] = [c[4] for c in ohlcv]
+                        logger.info(f"✅ Temporarily added {symbol} to basket")
+                except Exception as e:
+                    logger.warning(f"Failed to add {symbol}: {e}")
+        
+        # Пересчитываем веса если добавили новые активы
+        if len(self.basket_symbols) > 8:
+            self.calculate_basket_weights()
+            return True
+        return False
+
+    def get_market_volatility(self):
+        """Проверяем общую волатильность рынка"""
+        try:
+            # Смотрим волатильность BTC за последние 24 часа
+            btc_ohlcv = self.exchange.fetch_ohlcv("BTC/USDT:USDT", "1h", limit=24)
+            if btc_ohlcv and len(btc_ohlcv) >= 12:
+                highs = [c[2] for c in btc_ohlcv]
+                lows = [c[3] for c in btc_ohlcv]
+                avg_range = np.mean([(h-l)/l for h, l in zip(highs, lows)]) * 100
+                return avg_range
+        except Exception as e:
+            logger.warning(f"Error calculating market volatility: {e}")
+        return 1.0  # default средняя волатильность
 
     def fetch_historical_data(self):
         logger.info("Fetching 15-MINUTE historical data from OKX...")
@@ -66,7 +113,7 @@ class OKXBasketMonitor(Subject):
         valid = [s for s in [self.target] + self.basket_symbols 
                 if s in self.historical_data and len(self.historical_data[s]) >= min_bars_required]
         
-        # СОРТИРУЕМ ПО КОРРЕЛЯЦИИ И БЕРЕМ ТОП-6
+        # СОРТИРУЕМ ПО КОРРЕЛЯЦИИ И БЕРЕМ ТОП-8 (увеличили с 6)
         if len(valid) >= 4:
             correlations = []
             for symbol in valid:
@@ -77,9 +124,9 @@ class OKXBasketMonitor(Subject):
                         corr = np.corrcoef(x, y)[0, 1]
                         correlations.append((symbol, abs(corr) if not np.isnan(corr) else 0))
             
-            # Берем топ-6 по корреляции
+            # Берем топ-8 по корреляции (было 6)
             correlations.sort(key=lambda x: x[1], reverse=True)
-            top_symbols = [self.target] + [s[0] for s in correlations[:6]]
+            top_symbols = [self.target] + [s[0] for s in correlations[:8]]
             self.basket_symbols = [s for s in self.basket_symbols if s in top_symbols and s != self.target]
             logger.info(f"Selected top {len(self.basket_symbols)} symbols by correlation")
         
@@ -219,32 +266,46 @@ class OKXBasketMonitor(Subject):
         return z, spread_now, (mean, std)
 
     def trading_signal(self, z):
-        """ОПТИМИЗИРОВАННЫЕ ПОРОГИ ДЛЯ БОЛЬШЕЙ ЧУВСТВИТЕЛЬНОСТИ"""
+        """СУПЕР-АГРЕССИВНЫЕ ПОРОГИ С ДИНАМИЧЕСКОЙ АДАПТАЦИЕЙ"""
         if z is None: 
             return "NO DATA"
         
-        # ПОНИЖЕННЫЕ ПОРОГИ ДЛЯ БОЛЕЕ ЧАСТЫХ СИГНАЛОВ
-        if z > 1.5:    # было 2.0
+        # ДИНАМИЧЕСКИЕ ПОРОГИ НА ОСНОВЕ ВОЛАТИЛЬНОСТИ
+        volatility = self.get_market_volatility()
+        
+        if volatility > 2.0:  # ВЫСОКАЯ ВОЛАТИЛЬНОСТЬ
+            entry_threshold = 1.0
+            exit_threshold = 0.15
+        elif volatility > 1.0:  # СРЕДНЯЯ ВОЛАТИЛЬНОСТЬ
+            entry_threshold = 1.2
+            exit_threshold = 0.18
+        else:  # НИЗКАЯ ВОЛАТИЛЬНОСТЬ
+            entry_threshold = 1.3
+            exit_threshold = 0.22
+        
+        if z > entry_threshold:
             self.consecutive_hold_signals = 0
             return "SHORT BTC / LONG BASKET"
-        if z < -1.5:   # было -2.0
+        if z < -entry_threshold:
             self.consecutive_hold_signals = 0  
             return "LONG BTC / SHORT BASKET"
-        if abs(z) < 0.3:  # было 0.5 - раньше выходим из позиций
+        if abs(z) < exit_threshold:
             self.consecutive_hold_signals = 0
             return "EXIT POSITION"
         
         self.consecutive_hold_signals += 1
         
-        # ЕСЛИ ДОЛГО НЕТ СИГНАЛОВ - УВЕДОМЛЯЕМ
-        if self.consecutive_hold_signals >= 10:
-            logger.info("LOW VOLATILITY - Consider expanding basket further")
+        # АВТОМАТИЧЕСКОЕ РАСШИРЕНИЕ КОРЗИНЫ ПРИ НИЗКОЙ АКТИВНОСТИ
+        if self.consecutive_hold_signals >= 8:  # УВЕЛИЧЕНА ЧУВСТВИТЕЛЬНОСТЬ
+            logger.info(f"🔄 Low volatility detected ({volatility:.2f}%) - expanding basket...")
+            if self.expand_basket_temporarily():
+                logger.info("✅ Basket expanded successfully")
             self.consecutive_hold_signals = 0
             
         return "HOLD"
 
     def run(self, interval_minutes=1):
-        logger.info("Starting OKX basket monitor with OPTIMIZED parameters...")
+        logger.info("Starting OKX basket monitor with SUPER-OPTIMIZED parameters...")
         sys.stdout.flush()
 
         if not self.fetch_historical_data():
@@ -261,6 +322,13 @@ class OKXBasketMonitor(Subject):
 
         while True:
             try:
+                # ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ ПРИ ДОЛГОМ HOLD
+                if self.consecutive_hold_signals >= 15:
+                    logger.info("🔄 Forcing data refresh due to extended low activity...")
+                    if self.fetch_historical_data():
+                        self.calculate_basket_weights()
+                    self.consecutive_hold_signals = 0
+                
                 if self.should_update_historical_data():
                     logger.info("Updating historical data...")
                     if self.fetch_historical_data():
@@ -275,10 +343,12 @@ class OKXBasketMonitor(Subject):
                 signal = self.trading_signal(z)
                 current_time = datetime.utcnow().strftime('%H:%M:%S')
                 
+                # ВЫВОДИМ ДОПОЛНИТЕЛЬНУЮ ИНФОРМАЦИЮ
+                volatility = self.get_market_volatility()
                 if z is not None:
-                    print(f"[{current_time}] Z-score: {z:6.2f} | Signal: {signal} | Spread: {spread:.3f}", flush=True)
+                    print(f"[{current_time}] Z-score: {z:6.2f} | Signal: {signal} | Spread: {spread:.3f} | Vol: {volatility:.2f}%", flush=True)
                 else:
-                    print(f"[{current_time}] Z-score: NO DATA | Signal: {signal}", flush=True)
+                    print(f"[{current_time}] Z-score: NO DATA | Signal: {signal} | Vol: {volatility:.2f}%", flush=True)
 
                 # БОЛЕЕ ЧАСТЫЕ УВЕДОМЛЕНИЯ ПРИ ИЗМЕНЕНИИ СИГНАЛА
                 if datetime.utcnow() - last_telegram_time >= timedelta(minutes=10) or "EXIT" in signal or "LONG" in signal or "SHORT" in signal:
@@ -294,7 +364,8 @@ class OKXBasketMonitor(Subject):
                         "basket_symbols": self.basket_symbols,
                         "basket_weights": self.basket_weights,
                         "timeframe": "15m",
-                        "consecutive_hold": self.consecutive_hold_signals
+                        "consecutive_hold": self.consecutive_hold_signals,
+                        "market_volatility": volatility
                     }
                     self.notify(report_data)
                     last_telegram_time = datetime.utcnow()
