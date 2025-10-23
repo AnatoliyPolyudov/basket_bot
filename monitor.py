@@ -26,10 +26,10 @@ class OKXBasketMonitor(Subject):
         })
         self.target = "BTC/USDT:USDT"
         self.basket_symbols = [
-            "PEPE/USDT:USDT",
-            "ADA/USDT:USDT", 
-            "LINK/USDT:USDT",
-            "SAND/USDT:USDT"
+            "DOGE/USDT:USDT",
+            "XRP/USDT:USDT", 
+            "MATIC/USDT:USDT",
+            "AVAX/USDT:USDT"
         ]
         self.basket_weights = []
         self.historical_data = {}
