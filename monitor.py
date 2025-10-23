@@ -26,25 +26,28 @@ class OKXBasketMonitor(Subject):
             "sandbox": False
         })
         self.target = "BTC/USDT:USDT"
-        # РАСШИРЕННАЯ КОРЗИНА с большей волатильностью
+        
+        # ОСНОВНАЯ КОРЗИНА С РАБОЧИМИ СИМВОЛАМИ OKX
         self.basket_symbols = [
             "DOGE/USDT:USDT",
             "XRP/USDT:USDT", 
-            "MATIC/USDT:USDT",
             "AVAX/USDT:USDT",
-            # ДОБАВЛЕНЫ НОВЫЕ АКТИВЫ ДЛЯ ВОЛАТИЛЬНОСТИ
             "SOL/USDT:USDT",
             "DOT/USDT:USDT", 
             "ADA/USDT:USDT",
-            "LINK/USDT:USDT"
+            "LINK/USDT:USDT",
+            # ЗАМЕНА MATIC НА РАБОЧИЕ СИМВОЛЫ:
+            "BNB/USDT:USDT",
+            "TRX/USDT:USDT"
         ]
+        
         self.basket_weights = []
         self.historical_data = {}
         self.timeframe = "15m"
         self.lookback_bars = 672
         self.normalization_factors = {}
         self.last_data_update = None
-        self.data_update_interval = timedelta(minutes=30)  # УВЕЛИЧЕНА ЧАСТОТА
+        self.data_update_interval = timedelta(minutes=20)  # ЕЩЕ ЧАЩЕ
         self.consecutive_hold_signals = 0
         
         # ДОПОЛНИТЕЛЬНЫЕ ВОЛАТИЛЬНЫЕ АКТИВЫ ДЛЯ РАСШИРЕНИЯ
@@ -52,29 +55,32 @@ class OKXBasketMonitor(Subject):
             "SAND/USDT:USDT", "MANA/USDT:USDT", "GALA/USDT:USDT",
             "ENJ/USDT:USDT", "CHZ/USDT:USDT", "ALICE/USDT:USDT",
             "NEAR/USDT:USDT", "ATOM/USDT:USDT", "FTM/USDT:USDT",
-            "APE/USDT:USDT", "GRT/USDT:USDT", "BAT/USDT:USDT"
+            "APE/USDT:USDT", "GRT/USDT:USDT", "BAT/USDT:USDT",
+            "ETC/USDT:USDT", "FIL/USDT:USDT", "EOS/USDT:USDT"
         ]
 
     def expand_basket_temporarily(self):
         """Временно добавляем волатильные активы при низкой активности"""
         logger.info("Expanding basket with volatile symbols...")
         
-        # Добавляем 2 случайных волатильных актива
-        new_symbols = random.sample(self.volatile_symbols_pool, 2)
+        # Добавляем 3 случайных волатильных актива (увеличили с 2)
+        new_symbols = random.sample(self.volatile_symbols_pool, 3)
+        added_count = 0
         
         for symbol in new_symbols:
-            if symbol not in self.basket_symbols and len(self.basket_symbols) < 12:
+            if symbol not in self.basket_symbols and len(self.basket_symbols) < 15:  # Увеличили лимит
                 try:
                     ohlcv = self.exchange.fetch_ohlcv(symbol, self.timeframe, limit=96)
                     if ohlcv and len(ohlcv) >= 96:
                         self.basket_symbols.append(symbol)
                         self.historical_data[symbol] = [c[4] for c in ohlcv]
                         logger.info(f"✅ Temporarily added {symbol} to basket")
+                        added_count += 1
                 except Exception as e:
                     logger.warning(f"Failed to add {symbol}: {e}")
         
         # Пересчитываем веса если добавили новые активы
-        if len(self.basket_symbols) > 8:
+        if added_count > 0:
             self.calculate_basket_weights()
             return True
         return False
@@ -113,7 +119,7 @@ class OKXBasketMonitor(Subject):
         valid = [s for s in [self.target] + self.basket_symbols 
                 if s in self.historical_data and len(self.historical_data[s]) >= min_bars_required]
         
-        # СОРТИРУЕМ ПО КОРРЕЛЯЦИИ И БЕРЕМ ТОП-8 (увеличили с 6)
+        # СОРТИРУЕМ ПО КОРРЕЛЯЦИИ И БЕРЕМ ТОП-10 (увеличили с 8)
         if len(valid) >= 4:
             correlations = []
             for symbol in valid:
@@ -124,9 +130,9 @@ class OKXBasketMonitor(Subject):
                         corr = np.corrcoef(x, y)[0, 1]
                         correlations.append((symbol, abs(corr) if not np.isnan(corr) else 0))
             
-            # Берем топ-8 по корреляции (было 6)
+            # Берем топ-10 по корреляции (было 8)
             correlations.sort(key=lambda x: x[1], reverse=True)
-            top_symbols = [self.target] + [s[0] for s in correlations[:8]]
+            top_symbols = [self.target] + [s[0] for s in correlations[:10]]
             self.basket_symbols = [s for s in self.basket_symbols if s in top_symbols and s != self.target]
             logger.info(f"Selected top {len(self.basket_symbols)} symbols by correlation")
         
@@ -266,38 +272,27 @@ class OKXBasketMonitor(Subject):
         return z, spread_now, (mean, std)
 
     def trading_signal(self, z):
-        """СУПЕР-АГРЕССИВНЫЕ ПОРОГИ С ДИНАМИЧЕСКОЙ АДАПТАЦИЕЙ"""
+        """УЛЬТРА-АГРЕССИВНЫЕ ПОРОГИ ДЛЯ МАКСИМАЛЬНОЙ ЧАСТОТЫ СИГНАЛОВ"""
         if z is None: 
             return "NO DATA"
         
-        # ДИНАМИЧЕСКИЕ ПОРОГИ НА ОСНОВЕ ВОЛАТИЛЬНОСТИ
-        volatility = self.get_market_volatility()
-        
-        if volatility > 2.0:  # ВЫСОКАЯ ВОЛАТИЛЬНОСТЬ
-            entry_threshold = 1.0
-            exit_threshold = 0.15
-        elif volatility > 1.0:  # СРЕДНЯЯ ВОЛАТИЛЬНОСТЬ
-            entry_threshold = 1.2
-            exit_threshold = 0.18
-        else:  # НИЗКАЯ ВОЛАТИЛЬНОСТЬ
-            entry_threshold = 1.3
-            exit_threshold = 0.22
-        
-        if z > entry_threshold:
+        # УЛЬТРА-АГРЕССИВНЫЕ ПОРОГИ ДЛЯ СКАЛЬПИНГА
+        if z > 0.6:    # БЫЛО 1.0-1.3 - СНИЗИЛИ ДО 0.6
             self.consecutive_hold_signals = 0
             return "SHORT BTC / LONG BASKET"
-        if z < -entry_threshold:
+        if z < -0.6:   # БЫЛО -1.0-1.3 - СНИЗИЛИ ДО -0.6
             self.consecutive_hold_signals = 0  
             return "LONG BTC / SHORT BASKET"
-        if abs(z) < exit_threshold:
+        if abs(z) < 0.08:  # БЫЛО 0.15-0.22 - СНИЗИЛИ ДО 0.08
             self.consecutive_hold_signals = 0
             return "EXIT POSITION"
         
         self.consecutive_hold_signals += 1
         
         # АВТОМАТИЧЕСКОЕ РАСШИРЕНИЕ КОРЗИНЫ ПРИ НИЗКОЙ АКТИВНОСТИ
-        if self.consecutive_hold_signals >= 8:  # УВЕЛИЧЕНА ЧУВСТВИТЕЛЬНОСТЬ
-            logger.info(f"🔄 Low volatility detected ({volatility:.2f}%) - expanding basket...")
+        if self.consecutive_hold_signals >= 5:  # БЫЛО 8 - СНИЗИЛИ ДО 5
+            volatility = self.get_market_volatility()
+            logger.info(f"🔄 Low activity detected ({self.consecutive_hold_signals} HOLDs, Vol: {volatility:.2f}%) - expanding basket...")
             if self.expand_basket_temporarily():
                 logger.info("✅ Basket expanded successfully")
             self.consecutive_hold_signals = 0
@@ -305,7 +300,7 @@ class OKXBasketMonitor(Subject):
         return "HOLD"
 
     def run(self, interval_minutes=1):
-        logger.info("Starting OKX basket monitor with SUPER-OPTIMIZED parameters...")
+        logger.info("Starting OKX basket monitor with ULTRA-AGGRESSIVE parameters...")
         sys.stdout.flush()
 
         if not self.fetch_historical_data():
@@ -317,13 +312,14 @@ class OKXBasketMonitor(Subject):
             logger.error("No valid symbols for monitoring.")
             return
 
-        logger.info(f"Monitoring {len(self.basket_symbols)} symbols: {[s.split('/')[0] for s in self.basket_symbols]}")
+        logger.info(f"🎯 Monitoring {len(self.basket_symbols)} symbols: {[s.split('/')[0] for s in self.basket_symbols]}")
+        logger.info("🚀 ULTRA-AGGRESSIVE MODE: Entry=±0.6, Exit=±0.08")
         last_telegram_time = datetime.utcnow() - timedelta(minutes=10)
 
         while True:
             try:
                 # ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ ПРИ ДОЛГОМ HOLD
-                if self.consecutive_hold_signals >= 15:
+                if self.consecutive_hold_signals >= 8:  # БЫЛО 15 - СНИЗИЛИ ДО 8
                     logger.info("🔄 Forcing data refresh due to extended low activity...")
                     if self.fetch_historical_data():
                         self.calculate_basket_weights()
@@ -346,7 +342,7 @@ class OKXBasketMonitor(Subject):
                 # ВЫВОДИМ ДОПОЛНИТЕЛЬНУЮ ИНФОРМАЦИЮ
                 volatility = self.get_market_volatility()
                 if z is not None:
-                    print(f"[{current_time}] Z-score: {z:6.2f} | Signal: {signal} | Spread: {spread:.3f} | Vol: {volatility:.2f}%", flush=True)
+                    print(f"[{current_time}] Z-score: {z:6.2f} | Signal: {signal} | Spread: {spread:.3f} | Vol: {volatility:.2f}% | HOLDs: {self.consecutive_hold_signals}", flush=True)
                 else:
                     print(f"[{current_time}] Z-score: NO DATA | Signal: {signal} | Vol: {volatility:.2f}%", flush=True)
 
