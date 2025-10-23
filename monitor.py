@@ -42,6 +42,7 @@ class SimpleBasketMonitor(Subject):
         self.timeframe = "15m"
         self.lookback_bars = 672
         self.data_loaded = False
+        self.window_bars = 35  # 🆕 Скользящее окно как в R-проекте
         
     def complete_data_reset(self):
         """ПОЛНЫЙ СБРОС всех данных и перезагрузка"""
@@ -143,24 +144,27 @@ class SimpleBasketMonitor(Subject):
             return spread
 
     def calculate_zscore(self, current_prices):
-        """Z-score как в R коде"""
+        """Z-score на СКОЛЬЗЯЩЕМ ОКНЕ как в R"""
         current_spread = self.calculate_spread(current_prices)
         if current_spread is None:
             return None, None, None
             
         historical_spread = self.calculate_spread()
-        if historical_spread is None or len(historical_spread) < 100:
+        if historical_spread is None or len(historical_spread) < self.window_bars:
             return None, None, None
-            
-        mean = np.mean(historical_spread)
-        std = np.std(historical_spread)
+        
+        # 🆕 ИЗМЕНЕНИЕ: используем только СКОЛЬЗЯЩЕЕ ОКНО
+        window_data = historical_spread[-self.window_bars:]
+        
+        mean = np.mean(window_data)
+        std = np.std(window_data)
         
         if std < 1e-10:
             return None, None, None
             
         z = (current_spread - mean) / std
         
-        logger.info(f"📊 R-STYLE CALC: spread={current_spread:.3f}, mean={mean:.3f}, std={std:.3f}, z={z:.2f}")
+        logger.info(f"📊 R-STYLE SLIDING WINDOW: {self.window_bars} bars | spread={current_spread:.3f}, mean={mean:.3f}, std={std:.3f}, z={z:.2f}")
         return z, current_spread, (mean, std)
 
     def get_current_prices(self):
@@ -183,15 +187,16 @@ class SimpleBasketMonitor(Subject):
             return None
 
     def trading_signal(self, z):
-        """Логика сигналов с агрессивными параметрами"""
+        """Логика сигналов с R-порогами"""
         if z is None:
             return "NO DATA"
             
-        if z > 0.6:
+        # 🆕 ИЗМЕНЕНИЕ: пороги как в R-проекте
+        if z > 1.0:  # Было 0.6
             return "SHORT BTC / LONG BASKET"
-        if z < -0.6:
+        if z < -1.0:  # Было -0.6
             return "LONG BTC / SHORT BASKET"
-        if abs(z) < 0.08:
+        if abs(z) < 0.5:  # Было 0.08
             return "EXIT POSITION"
             
         return "HOLD"
@@ -199,6 +204,8 @@ class SimpleBasketMonitor(Subject):
     def run(self, interval_minutes=1):
         """Основной цикл с автокоррекцией"""
         logger.info("🚀 Starting ULTIMATE R-CODE BASED MONITOR...")
+        logger.info(f"🎯 Using SLIDING WINDOW: {self.window_bars} bars")
+        logger.info(f"🎯 R-STYLE THRESHOLDS: ENTER ±1.0, EXIT ±0.5")
         
         logger.info("🔥 PERFORMING COMPLETE DATA RESET BEFORE START...")
         if not self.complete_data_reset():
@@ -235,7 +242,14 @@ class SimpleBasketMonitor(Subject):
                 
                 if z is not None:
                     status = "🚨 ABNORMAL" if abs(z) > 3.0 else "✅ NORMAL"
-                    logger.info(f"[{current_time}] Z: {z:6.2f} {status} | Signal: {signal} | Spread: {spread:.3f}")
+                    
+                    # 🆕 Показываем информацию об окне
+                    if stats:
+                        mean, std = stats
+                        logger.info(f"[{current_time}] Z: {z:6.2f} {status} | Window: {self.window_bars} bars")
+                        logger.info(f"   Signal: {signal} | Spread: {spread:.3f} | Mean: {mean:.3f} | Std: {std:.3f}")
+                    else:
+                        logger.info(f"[{current_time}] Z: {z:6.2f} {status} | Signal: {signal} | Spread: {spread:.3f}")
                 else:
                     logger.info(f"[{current_time}] Z: NO DATA | Signal: {signal}")
                 
