@@ -9,12 +9,47 @@ class FundingArbitrageMonitor:
             'binance': ccxt.binance({'options': {'defaultType': 'future'}}),
             'bybit': ccxt.bybit({'options': {'defaultType': 'future'}}),
             'okx': ccxt.okx({'options': {'defaultType': 'future'}}),
-            'gate': ccxt.gateio({'options': {'defaultType': 'future'}})
+            'gate': ccxt.gateio({'options': {'defaultType': 'future'}}),
+            'mexc': ccxt.mexc({'options': {'defaultType': 'future'}})
         }
         
-        self.symbols = ["BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT"]
+        self.symbols = ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
         self.min_spread = 0.0003  # 0.03%
         self.opportunities_history = []
+
+    def safe_fetch_funding_rate(self, exchange, symbol):
+        """Безопасное получение funding rate с обработкой ошибок"""
+        try:
+            funding_data = exchange.fetch_funding_rate(symbol)
+            
+            # Универсальный парсинг для разных бирж
+            if isinstance(funding_data, dict):
+                rate = funding_data.get('fundingRate')
+                next_time = funding_data.get('nextFundingTime')
+                timestamp = funding_data.get('timestamp')
+                
+                if rate is not None:
+                    return {
+                        'rate': float(rate),
+                        'next_funding': next_time,
+                        'timestamp': timestamp
+                    }
+            
+            # Альтернативный метод для некоторых бирж
+            markets = exchange.load_markets()
+            if symbol in markets:
+                market = markets[symbol]
+                if 'funding' in market:
+                    return {
+                        'rate': float(market['funding']['rate']),
+                        'next_funding': market['funding'].get('nextFundingTime'),
+                        'timestamp': exchange.milliseconds()
+                    }
+                    
+        except Exception as e:
+            print(f"    Ошибка для {symbol}: {e}")
+            
+        return None
 
     def fetch_funding_rates(self):
         """Получаем funding rates со всех бирж"""
@@ -22,17 +57,21 @@ class FundingArbitrageMonitor:
         
         for exchange_name, exchange in self.exchanges.items():
             try:
+                print(f"🔍 Загружаем данные с {exchange_name}...")
                 funding_data[exchange_name] = {}
+                
                 for symbol in self.symbols:
-                    funding = exchange.fetch_funding_rate(symbol)
-                    funding_data[exchange_name][symbol] = {
-                        'rate': funding['fundingRate'],
-                        'next_funding': funding['nextFundingTime'],
-                        'timestamp': funding['timestamp']
-                    }
-                time.sleep(0.1)  # Rate limit
+                    result = self.safe_fetch_funding_rate(exchange, symbol)
+                    if result:
+                        funding_data[exchange_name][symbol] = result
+                        print(f"    ✅ {symbol}: {result['rate']:.6f}")
+                    else:
+                        print(f"    ❌ {symbol}: не удалось получить данные")
+                    
+                    time.sleep(0.2)  # Rate limit
+                    
             except Exception as e:
-                print(f"Ошибка на {exchange_name}: {e}")
+                print(f"❌ Ошибка подключения к {exchange_name}: {e}")
                 
         return funding_data
 
@@ -90,7 +129,7 @@ class FundingArbitrageMonitor:
             'profitable': net_profit > 0
         }
 
-    def monitor_continuous(self, interval=300):
+    def monitor_continuous(self, interval=60):
         """Непрерывный мониторинг"""
         print("🚀 Starting Cross-Exchange Funding Arbitrage Monitor...")
         print("=" * 70)
@@ -103,31 +142,32 @@ class FundingArbitrageMonitor:
                 current_time = datetime.now().strftime('%H:%M:%S')
                 print(f"\n📊 {current_time} - Найдено возможностей: {len(opportunities)}")
                 
-                for opp in opportunities:
-                    profit_data = self.calculate_profitability(opp)
-                    
-                    print(f"\n🎯 {opp['symbol']}")
-                    print(f"   LONG:  {opp['long_exchange']} ({opp['long_rate']:.6f})")
-                    print(f"   SHORT: {opp['short_exchange']} ({opp['short_rate']:.6f})")
-                    print(f"   Spread: {opp['spread']:.6f} ({opp['profit_potential']:.4f}%)")
-                    
-                    if profit_data['profitable']:
-                        print(f"   ✅ PROFIT: ${profit_data['net_profit']:.2f} (ROI: {profit_data['roi_per_period']:.4f}%)")
-                    else:
-                        print(f"   ❌ LOSS: ${abs(profit_data['net_profit']):.2f} (комиссии)")
-                
-                if not opportunities:
+                if opportunities:
+                    for opp in opportunities:
+                        profit_data = self.calculate_profitability(opp)
+                        
+                        print(f"\n🎯 {opp['symbol']}")
+                        print(f"   LONG:  {opp['long_exchange']} ({opp['long_rate']:.6f})")
+                        print(f"   SHORT: {opp['short_exchange']} ({opp['short_rate']:.6f})")
+                        print(f"   Spread: {opp['spread']:.6f} ({opp['profit_potential']:.4f}%)")
+                        
+                        if profit_data['profitable']:
+                            print(f"   ✅ PROFIT: ${profit_data['net_profit']:.2f} (ROI: {profit_data['roi_per_period']:.4f}%)")
+                        else:
+                            print(f"   ❌ LOSS: ${abs(profit_data['net_profit']):.2f} (комиссии)")
+                else:
                     print("   🤷 No arbitrage opportunities found")
                 
-                print(f"\n⏳ Next check in {interval//60} minutes...")
+                print(f"\n⏳ Next check in {interval} seconds...")
+                print("=" * 70)
                 time.sleep(interval)
                 
             except KeyboardInterrupt:
                 print("\n🛑 Monitoring stopped by user")
                 break
             except Exception as e:
-                print(f"❌ Error: {e}")
-                time.sleep(60)
+                print(f"❌ Error in main loop: {e}")
+                time.sleep(30)
 
 # Запуск монитора
 if __name__ == "__main__":
