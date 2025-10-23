@@ -24,9 +24,9 @@ class OKXBasketMonitor(Subject):
             "options": {"defaultType": "swap"},
             "sandbox": False
         })
-        self.target = "ETH/USDT:USDT"
+        self.target = "SOL/USDT:USDT"
         # Meme basket instead of regular alts
-        self.basket_symbols = ["DOGE/USDT:USDT", "SHIB/USDT:USDT", "PEPE/USDT:USDT"]
+        self.basket_symbols = ["DOGE/USDT:USDT", "AVAX/USDT:USDT", "ATOM/USDT:USDT", "NEAR/USDT:USDT"]
         self.basket_weights = []
         self.historical_data = {}
         self.lookback_days = 30
