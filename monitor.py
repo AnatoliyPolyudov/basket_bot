@@ -58,56 +58,47 @@ class OKXBasketMonitor(Subject):
         return True
 
     def calculate_basket_weights(self):
-        volatilities = {}
+        correlations = []
         valid_symbols = []
 
         print("="*50, flush=True)
-        print("CORRELATION & VOLATILITY ANALYSIS", flush=True)
+        print("CALCULATING WEIGHTS BASED ON CORRELATION", flush=True)
         print("="*50, flush=True)
 
         for symbol in self.basket_symbols:
             if symbol in self.historical_data and self.target in self.historical_data:
                 x = np.array(self.historical_data[self.target])
                 y = np.array(self.historical_data[symbol])
-                if len(x) != len(y):
-                    continue
-                    
-                corr = np.corrcoef(x, y)[0, 1]
-                if np.isnan(corr):
-                    continue
-                    
-                valid_symbols.append(symbol)
-
-                returns = np.diff(np.log(y))
-                sigma = max(np.std(returns), 1e-4)
-                volatilities[symbol] = sigma
-
-                asset_name = symbol.split('/')[0]
-                corr_percent = abs(corr) * 100
-                quality = (
-                    "EXCELLENT" if corr > 0.8 else
-                    "GOOD" if corr > 0.6 else
-                    "AVERAGE" if corr > 0.4 else
-                    "WEAK" if corr > 0.2 else
-                    "NO CORR"
-                )
-                direction = "positive" if corr > 0 else "negative"
-                print(f"{asset_name:8} | Corr: {corr:6.3f} | {corr_percent:5.1f}% | {quality:8} | {direction} | vol={sigma:.4f}", flush=True)
+                if len(x) == len(y):
+                    corr = np.corrcoef(x, y)[0, 1]
+                    if not np.isnan(corr):
+                        correlations.append(abs(corr))  # используем абсолютную корреляцию
+                        valid_symbols.append(symbol)
+                        asset_name = symbol.split('/')[0]
+                        quality = (
+                            "EXCELLENT" if corr > 0.8 else
+                            "GOOD" if corr > 0.6 else
+                            "AVERAGE" if corr > 0.4 else
+                            "WEAK" if corr > 0.2 else
+                            "NO CORR"
+                        )
+                        direction = "positive" if corr > 0 else "negative"
+                        print(f"{asset_name:8} | Correlation: {corr:6.3f} | {quality:8} | {direction}", flush=True)
 
         self.basket_symbols = valid_symbols
-        if not self.basket_symbols:
+        if not correlations:
             logger.error("No valid symbols for basket weights.")
             return
 
-        inv_vars = np.array([1 / (volatilities[s]**2) for s in self.basket_symbols])
-        self.basket_weights = inv_vars / np.sum(inv_vars)
+        # Веса пропорциональны корреляции (простой метод)
+        self.basket_weights = np.array(correlations) / np.sum(correlations)
 
         print("="*50, flush=True)
-        print("FINAL BASKET WITH WEIGHTS (1/vol method)", flush=True)
+        print("FINAL BASKET WITH WEIGHTS (correlation-based)", flush=True)
         print("="*50, flush=True)
-        for s, w in zip(self.basket_symbols, self.basket_weights):
+        for s, w, c in zip(self.basket_symbols, self.basket_weights, correlations):
             asset_name = s.split('/')[0]
-            print(f"{asset_name:8} | Weight: {w:6.3f} | vol={volatilities[s]:.4f}", flush=True)
+            print(f"{asset_name:8} | Weight: {w:6.3f} | Correlation: {c:6.3f}", flush=True)
         print("="*50, flush=True)
 
     def get_current_prices(self):
@@ -135,7 +126,9 @@ class OKXBasketMonitor(Subject):
         basket_prices = np.zeros(min_len)
         for i, s in enumerate(self.basket_symbols):
             basket_prices += self.basket_weights[i] * np.array(self.historical_data[s][-min_len:])
-        return np.log(target_prices / basket_prices)
+        
+        # ПРОСТОЙ СПРЕД (без логарифма)
+        return target_prices / basket_prices
 
     def calculate_zscore(self, current_prices):
         if not current_prices or not all(s in current_prices for s in [self.target] + self.basket_symbols):
@@ -145,7 +138,8 @@ class OKXBasketMonitor(Subject):
         if basket_price_now <= 0:
             return None, None, None
             
-        spread_now = np.log(current_prices[self.target] / basket_price_now)
+        # ПРОСТОЙ СПРЕД (без логарифма)
+        spread_now = current_prices[self.target] / basket_price_now
         spread_hist = self.calculate_spread_series()
         
         if spread_hist is None:
@@ -156,6 +150,11 @@ class OKXBasketMonitor(Subject):
             return None, None, None
             
         z = (spread_now - mean) / std
+        
+        # ОТЛАДОЧНЫЙ ВЫВОД
+        print(f"DEBUG: BTC={current_prices[self.target]:.2f}, basket={basket_price_now:.2f}", flush=True)
+        print(f"DEBUG: spread_now={spread_now:.2f}, mean={mean:.2f}, std={std:.2f}, z={z:.2f}", flush=True)
+        
         return z, spread_now, (mean, std)
 
     def trading_signal(self, z):
@@ -193,7 +192,7 @@ class OKXBasketMonitor(Subject):
                 current_time = datetime.utcnow().strftime('%H:%M:%S')
                 
                 if z is not None:
-                    print(f"[{current_time}] Z-score: {z:6.2f} | Signal: {signal} | Spread: {spread:.5f}", flush=True)
+                    print(f"[{current_time}] Z-score: {z:6.2f} | Signal: {signal} | Spread: {spread:.2f}", flush=True)
                 else:
                     print(f"[{current_time}] Z-score: NO DATA | Signal: {signal}", flush=True)
 
