@@ -62,20 +62,10 @@ from telegram_observer import TelegramObserver
 from callback_handler import handle_callback
 import threading
 import requests
+import sys
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
-
-# Создаем отдельный логгер для красивого вывода
-console_logger = logging.StreamHandler()
-console_logger.setLevel(logging.INFO)
-formatter = logging.Formatter('%(message)s')
-console_logger.setFormatter(formatter)
-
-pretty_logger = logging.getLogger('pretty')
-pretty_logger.setLevel(logging.INFO)
-pretty_logger.addHandler(console_logger)
-pretty_logger.propagate = False
 
 class OKXBasketMonitor(Subject):
     def __init__(self):
@@ -85,15 +75,19 @@ class OKXBasketMonitor(Subject):
             "options": {"defaultType": "swap"},
             "sandbox": False
         })
-        self.target = "ETH/USDT:USDT"
-        # Мем-корзина вместо обычных альтов
-        self.basket_symbols = ["DOGE/USDT:USDT", "SHIB/USDT:USDT", "PEPE/USDT:USDT"]
+        self.target = "BTC/USDT:USDT"
+        self.basket_symbols = [
+        "DOGE/USDT:USDT",    # Мем (BTC форк)
+        "ADA/USDT:USDT",     # Academic подход (контраст)
+        "XRP/USDT:USDT",     # Банковский (полная противоположность)
+        "PEPE/USDT:USDT"     # Pure meme (экстремальная волатильность)
+]
         self.basket_weights = []
         self.historical_data = {}
         self.lookback_days = 30
 
     def fetch_historical_data(self):
-        logger.info("📊 Fetching historical data from OKX...")
+        logger.info("Fetching historical data from OKX...")
         for symbol in [self.target] + self.basket_symbols:
             try:
                 since = self.exchange.parse8601(
@@ -101,25 +95,27 @@ class OKXBasketMonitor(Subject):
                 )
                 ohlcv = self.exchange.fetch_ohlcv(symbol, "1d", since=since, limit=30)
                 if not ohlcv:
-                    logger.warning(f"⚠️ No data for {symbol}")
+                    logger.warning(f"No data for {symbol}")
                     continue
                 self.historical_data[symbol] = [c[4] for c in ohlcv]
-                logger.info(f"✅ Loaded {len(self.historical_data[symbol])} days for {symbol}")
+                logger.info(f"Loaded {len(self.historical_data[symbol])} days for {symbol}")
             except Exception as e:
-                logger.warning(f"❌ Error loading {symbol}: {e}")
+                logger.warning(f"Error loading {symbol}: {e}")
 
+        print(f"Loaded data: {list(self.historical_data.keys())}", flush=True)
+        
         valid = [s for s in [self.target]+self.basket_symbols if s in self.historical_data and len(self.historical_data[s])>=10]
         if len(valid) < 3:
-            logger.error("❌ Not enough valid symbols for analysis.")
+            logger.error("Not enough valid symbols for analysis.")
             return False
         return True
 
     def calculate_basket_weights(self):
         correlations, valid = [], []
         
-        pretty_logger.info("🔍 " + "="*50)
-        pretty_logger.info("🔍 АНАЛИЗ КОРРЕЛЯЦИЙ С BTC")
-        pretty_logger.info("🔍 " + "="*50)
+        print("="*50, flush=True)
+        print("CORRELATION ANALYSIS WITH ETH", flush=True)
+        print("="*50, flush=True)
         
         for symbol in self.basket_symbols:
             if symbol in self.historical_data and self.target in self.historical_data:
@@ -130,30 +126,29 @@ class OKXBasketMonitor(Subject):
                         correlations.append(corr)
                         valid.append(symbol)
                         
-                        # КРАСИВЫЙ ВЫВОД КОРРЕЛЯЦИЙ
                         asset_name = symbol.split('/')[0]
                         corr_percent = abs(corr) * 100
                         
                         if corr > 0.8:
-                            emoji, quality = "🟢", "ОТЛИЧНАЯ"
+                            quality = "EXCELLENT"
                         elif corr > 0.6:
-                            emoji, quality = "🟡", "ХОРОШАЯ" 
+                            quality = "GOOD" 
                         elif corr > 0.4:
-                            emoji, quality = "🟠", "СРЕДНЯЯ"
+                            quality = "AVERAGE"
                         elif corr > 0.2:
-                            emoji, quality = "🔴", "СЛАБАЯ"
+                            quality = "WEAK"
                         else:
-                            emoji, quality = "💤", "ОТСУТСТВУЕТ"
+                            quality = "NO CORR"
                         
-                        direction = "прямая" if corr > 0 else "обратная"
-                        pretty_logger.info(f"{emoji} {asset_name:6} | {corr:7.3f} | {corr_percent:5.1f}% | {quality:10} | {direction}")
+                        direction = "positive" if corr > 0 else "negative"
+                        print(f"{asset_name:6} | {corr:7.3f} | {corr_percent:5.1f}% | {quality:10} | {direction}", flush=True)
         
-        pretty_logger.info("🔍 " + "="*50)
+        print("="*50, flush=True)
         
         self.basket_symbols = valid
         if not correlations:
             if not self.basket_symbols:
-                logger.error("❌ No valid symbols for basket weights.")
+                logger.error("No valid symbols for basket weights.")
                 return
             self.basket_weights = np.ones(len(self.basket_symbols)) / len(self.basket_symbols)
             return
@@ -161,19 +156,19 @@ class OKXBasketMonitor(Subject):
         abs_corr = np.abs(correlations)
         self.basket_weights = abs_corr / np.sum(abs_corr)
         
-        pretty_logger.info("🎯 " + "="*50)
-        pretty_logger.info("🎯 ИТОГОВАЯ КОРЗИНА С ВЕСАМИ")
-        pretty_logger.info("🎯 " + "="*50)
+        print("="*50, flush=True)
+        print("FINAL BASKET WITH WEIGHTS", flush=True)
+        print("="*50, flush=True)
         
         total_corr = 0
         for s, w, c in zip(self.basket_symbols, self.basket_weights, correlations):
             asset_name = s.split('/')[0]
             total_corr += abs(c)
-            pretty_logger.info(f"📊 {asset_name:6} | Вес: {w:6.3f} | Корр: {c:6.3f}")
+            print(f"{asset_name:6} | Weight: {w:6.3f} | Corr: {c:6.3f}", flush=True)
         
         avg_correlation = total_corr / len(correlations)
-        pretty_logger.info(f"📈 Средняя корреляция: {avg_correlation:.3f}")
-        pretty_logger.info("🎯 " + "="*50)
+        print(f"Average correlation: {avg_correlation:.3f}", flush=True)
+        print("="*50, flush=True)
 
     def get_current_prices(self):
         prices = {}
@@ -184,11 +179,11 @@ class OKXBasketMonitor(Subject):
                 if s in tickers and tickers[s].get("last") is not None:
                     prices[s] = tickers[s]["last"]
             if len(prices) != len(symbols):
-                logger.warning("⚠️ Some prices are missing.")
+                logger.warning("Some prices are missing.")
                 return None
             return prices
         except Exception as e:
-            logger.warning(f"❌ Error fetching tickers: {e}")
+            logger.warning(f"Error fetching tickers: {e}")
             return None
 
     def calculate_basket_price(self, prices):
@@ -197,7 +192,7 @@ class OKXBasketMonitor(Subject):
     def calculate_spread_series(self):
         min_len = min(len(self.historical_data[s]) for s in [self.target]+self.basket_symbols if s in self.historical_data)
         if min_len < 10:
-            logger.warning("⚠️ Insufficient historical data.")
+            logger.warning("Insufficient historical data.")
             return None
         target = np.array(self.historical_data[self.target][-min_len:])
         basket = np.zeros(min_len)
@@ -220,25 +215,34 @@ class OKXBasketMonitor(Subject):
 
     def trading_signal(self, z):
         if z is None: return "NO DATA"
-        if z > 2.0: return "SHORT BTC / LONG BASKET"
-        if z < -2.0: return "LONG BTC / SHORT BASKET"
+        if z > 2.0: return "SHORT ETH / LONG BASKET"
+        if z < -2.0: return "LONG ETH / SHORT BASKET"
         if abs(z) < 0.5: return "EXIT POSITION"
         return "HOLD"
 
     def run(self, interval_minutes=1):
-        logger.info("🚀 Starting OKX basket monitor...")
+        logger.info("Starting OKX basket monitor...")
+        
+        sys.stdout.flush()
+        
         if not self.fetch_historical_data():
-            logger.error("❌ Failed to fetch historical data.")
+            logger.error("Failed to fetch historical data.")
             return
+        
+        sys.stdout.flush()
+        
         self.calculate_basket_weights()
+        
+        sys.stdout.flush()
+        
         if not self.basket_symbols:
-            logger.error("❌ No valid symbols for monitoring.")
+            logger.error("No valid symbols for monitoring.")
             return
-        logger.info(f"📊 Monitoring symbols: {self.basket_symbols}")
+        logger.info(f"Monitoring symbols: {self.basket_symbols}")
 
         last_telegram_time = datetime.utcnow() - timedelta(minutes=10)
 
-        # --- первое актуальное сообщение ---
+        # --- first actual message ---
         prices = self.get_current_prices()
         if prices:
             z, spread, stats = self.calculate_zscore(prices)
@@ -284,32 +288,23 @@ class OKXBasketMonitor(Subject):
                         "basket_weights": self.basket_weights
                     }
 
-                    # Красивый вывод Z-score в реальном времени
+                    # Clean Z-score output in real time
                     current_time = datetime.utcnow().strftime('%H:%M:%S')
-                    if abs(z) < 1.0:
-                        z_color = "🟢"
-                    elif abs(z) < 2.0:
-                        z_color = "🟡"
-                    elif abs(z) < 3.0:
-                        z_color = "🟠"
-                    else:
-                        z_color = "🔴"
-                    
-                    pretty_logger.info(f"{z_color} [{current_time}] Z-score: {z:6.2f} | Сигнал: {signal}")
+                    print(f"[{current_time}] Z-score: {z:6.2f} | Signal: {signal}")
 
                     if datetime.utcnow() - last_telegram_time >= timedelta(minutes=10):
                         self.notify(report_data)
                         last_telegram_time = datetime.utcnow()
                 else:
                     current_time = datetime.utcnow().strftime('%H:%M:%S')
-                    pretty_logger.info(f"⚪ [{current_time}] Z-score: НЕТ ДАННЫХ")
+                    print(f"[{current_time}] Z-score: NO DATA")
 
                 time.sleep(interval_minutes*60)
             except KeyboardInterrupt:
-                logger.info("🛑 Monitoring stopped by user.")
+                logger.info("Monitoring stopped by user.")
                 break
             except Exception as e:
-                logger.warning(f"❌ Error in loop: {e}")
+                logger.warning(f"Error in loop: {e}")
                 time.sleep(60)
 
 
@@ -330,7 +325,7 @@ def telegram_polling(trader):
                 offset = (update["update_id"] + 1)
             time.sleep(1)
         except Exception as e:
-            print("❌ Telegram polling error:", e)
+            print("Telegram polling error:", e)
             time.sleep(5)
 
 
@@ -409,9 +404,9 @@ class TelegramObserver(Observer):
             payload['reply_markup'] = json.dumps({'inline_keyboard': buttons})
         try:
             requests.post(url, data=payload, timeout=10)
-            print("✅ Telegram message sent")
+            print("Telegram message sent")
         except Exception as e:
-            print("❌ Telegram send failed:", e)
+            print("Telegram send failed:", e)
 
     def update(self, data):
         basket_symbols = data.get('basket_symbols', [])
@@ -450,7 +445,8 @@ class TelegramObserver(Observer):
 from observer import Observer
 import logging
 
-logging.basicConfig(level=logging.INFO)
+# Установи уровень WARNING вместо INFO
+logging.basicConfig(level=logging.WARNING)  # ← было INFO
 logger = logging.getLogger(__name__)
 
 class OKXBasketTrader(Observer):
@@ -468,7 +464,7 @@ class OKXBasketTrader(Observer):
         Метод Observer: вызывается при каждом новом сигнале от монитора.
         """
         signal = data.get("signal")
-        if signal:
+        if signal and signal != "HOLD":  # ← ДОБАВЛЕНО: игнорируем HOLD сигналы
             self.execute_signal(signal, data)
 
     def execute_signal(self, signal, data):
@@ -476,21 +472,23 @@ class OKXBasketTrader(Observer):
         Пока просто выводит, что будет сделано.
         """
         if self.paper_trading:
-            logger.info(f"[PAPER TRADING] Signal received: {signal}")
-            logger.info(f"[PAPER TRADING] Data: {data}")
+            # Используем debug вместо info для спам-сообщений
+            logger.debug(f"[PAPER TRADING] Signal received: {signal}")
+            logger.debug(f"[PAPER TRADING] Data: {data}")
         else:
             logger.info(f"[REAL TRADING] Would execute: {signal}")
 
     # --- Методы для кнопок ---
-    def open_position(self, symbol: str, size=None):
+    def open_position(self, signal: str, size=None):
         if size is None:
             size = self.max_exposure
-        self.current_positions[symbol] = size
-        logger.info(f"[PAPER TRADING] Opened position {symbol} with size {size}")
+        self.current_positions[signal] = size
+        # Оставляем info только для важных действий
+        logger.info(f"✅ [PAPER] OPENED: {signal} with size {size}")
 
-    def close_position(self, symbol: str):
-        if symbol in self.current_positions:
-            del self.current_positions[symbol]
-            logger.info(f"[PAPER TRADING] Closed position {symbol}")
+    def close_position(self, signal: str):
+        if signal in self.current_positions:
+            del self.current_positions[signal]
+            logger.info(f"✅ [PAPER] CLOSED: {signal}")
         else:
-            logger.info(f"[PAPER TRADING] No open position to close for {symbol}")
+            logger.warning(f"⚠️ [PAPER] No open position to close for {signal}")
