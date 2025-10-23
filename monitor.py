@@ -63,44 +63,53 @@ class SimpleBasketMonitor(Subject):
         return True
 
     def calculate_spread(self, current_prices=None):
-        """
-        ПРОСТОЙ расчет спреда как в R коде: BTC цена / средняя цена альтов
-        """
-        if current_prices:
-            # ТЕКУЩИЙ СПРЕД
-            btc_price = current_prices[self.target]
-            alt_prices = [current_prices[s] for s in self.basket_symbols if s in current_prices]
+    """
+    ИСПРАВЛЕННЫЙ метод - логарифмический спред
+    """
+    if current_prices:
+        # ТЕКУЩИЙ СПРЕД
+        btc_price = current_prices[self.target]
+        alt_prices = [current_prices[s] for s in self.basket_symbols if s in current_prices]
+        
+        if not alt_prices or btc_price <= 0:
+            return None
             
-            if not alt_prices:
-                return None
-                
-            avg_alt_price = np.mean(alt_prices)
-            spread = btc_price / avg_alt_price
-            return spread
+        avg_alt_price = np.mean(alt_prices)
+        if avg_alt_price <= 0:
+            return None
             
-        else:
-            # ИСТОРИЧЕСКИЙ СПРЕД
-            min_len = min(len(self.historical_data[s]) for s in [self.target] + self.basket_symbols 
-                         if s in self.historical_data)
+        # ЛОГАРИФМИЧЕСКИЙ СПРЕД - РЕШЕНИЕ ПРОБЛЕМЫ!
+        spread = np.log(btc_price) - np.log(avg_alt_price)
+        logger.info(f"📊 LOG SPREAD: log(BTC)={np.log(btc_price):.3f}, log(Alts)={np.log(avg_alt_price):.3f}, spread={spread:.3f}")
+        return spread
+        
+    else:
+        # ИСТОРИЧЕСКИЙ СПРЕД
+        min_len = min(len(self.historical_data[s]) for s in [self.target] + self.basket_symbols 
+                     if s in self.historical_data)
+        
+        if min_len < 100:
+            return None
             
-            if min_len < 100:
-                return None
-                
-            btc_prices = np.array(self.historical_data[self.target][-min_len:])
-            alt_prices_matrix = []
+        btc_prices = np.array(self.historical_data[self.target][-min_len:])
+        alt_prices_matrix = []
+        
+        for symbol in self.basket_symbols:
+            if symbol in self.historical_data and len(self.historical_data[symbol]) >= min_len:
+                alt_prices_matrix.append(self.historical_data[symbol][-min_len:])
+        
+        if not alt_prices_matrix:
+            return None
             
-            for symbol in self.basket_symbols:
-                if symbol in self.historical_data and len(self.historical_data[symbol]) >= min_len:
-                    alt_prices_matrix.append(self.historical_data[symbol][-min_len:])
-            
-            if not alt_prices_matrix:
-                return None
-                
-            alt_prices_matrix = np.array(alt_prices_matrix)
-            avg_alt_prices = np.mean(alt_prices_matrix, axis=0)
-            spread = btc_prices / avg_alt_prices
-            
-            return spread
+        alt_prices_matrix = np.array(alt_prices_matrix)
+        avg_alt_prices = np.mean(alt_prices_matrix, axis=0)
+        
+        # Защита от нулевых/отрицательных цен
+        btc_prices = np.maximum(btc_prices, 0.01)
+        avg_alt_prices = np.maximum(avg_alt_prices, 0.01)
+        
+        spread = np.log(btc_prices) - np.log(avg_alt_prices)
+        return spread
 
     def calculate_zscore(self, current_prices):
         """
