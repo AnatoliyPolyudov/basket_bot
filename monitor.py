@@ -27,9 +27,15 @@ class SimpleBasketMonitor(Subject):
         self.target = "BTC/USDT:USDT"
         
         self.basket_symbols = [
-            "DOGE/USDT:USDT", "XRP/USDT:USDT", "AVAX/USDT:USDT",
-            "SOL/USDT:USDT", "DOT/USDT:USDT", "ADA/USDT:USDT",
-            "LINK/USDT:USDT", "BNB/USDT:USDT", "TRX/USDT:USDT"
+            "ETH/USDT:USDT",      # ~$3,000 - дорогой актив
+            "BNB/USDT:USDT",      # ~$600
+            "SOL/USDT:USDT",      # ~$150  
+            "XRP/USDT:USDT",      # ~$0.50
+            "ADA/USDT:USDT",      # ~$0.40
+            "AVAX/USDT:USDT",     # ~$30
+            "DOT/USDT:USDT",      # ~$6
+            "LINK/USDT:USDT",     # ~$15
+            "MATIC/USDT:USDT"     # ~$0.70
         ]
         
         self.historical_data = {}
