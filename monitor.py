@@ -36,16 +36,30 @@ class SimpleBasketMonitor(Subject):
         self.historical_data = {}
         self.timeframe = "15m"
         self.lookback_bars = 672  # 7 дней в 15-минутках
+        self.data_loaded = False
+        
+    def force_data_reload(self):
+        """ПРИНУДИТЕЛЬНЫЙ СБРОС и перезагрузка исторических данных"""
+        logger.info("🔄 FORCING HISTORICAL DATA RELOAD...")
+        self.historical_data = {}  # Полный сброс
+        self.data_loaded = False
+        return self.fetch_historical_data()
         
     def fetch_historical_data(self):
-        """ПРОСТАЯ загрузка данных"""
-        logger.info("Fetching historical data...")
+        """ПРОСТАЯ загрузка данных с принудительным обновлением"""
+        if self.data_loaded:
+            logger.info("📊 Historical data already loaded, skipping...")
+            return True
+            
+        logger.info("🔄 FETCHING FRESH HISTORICAL DATA FROM OKX...")
         
+        success_count = 0
         for symbol in [self.target] + self.basket_symbols:
             try:
                 ohlcv = self.exchange.fetch_ohlcv(symbol, self.timeframe, limit=self.lookback_bars)
-                if ohlcv:
+                if ohlcv and len(ohlcv) >= 100:
                     self.historical_data[symbol] = [c[4] for c in ohlcv]  # только цены закрытия
+                    success_count += 1
                     logger.info(f"✅ Loaded {len(self.historical_data[symbol])} bars for {symbol}")
                 else:
                     logger.warning(f"❌ No data for {symbol}")
@@ -56,18 +70,33 @@ class SimpleBasketMonitor(Subject):
         valid_symbols = [s for s in [self.target] + self.basket_symbols 
                         if s in self.historical_data and len(self.historical_data[s]) >= 100]
         
-        if len(valid_symbols) < 4:
-            logger.error("❌ Not enough valid symbols")
-            return False
+        if len(valid_symbols) >= 4:
+            self.data_loaded = True
+            logger.info(f"🎯 Successfully loaded {success_count} symbols")
             
-        return True
+            # Сразу покажем статистику спреда
+            spread_stats = self.calculate_spread_stats()
+            if spread_stats:
+                mean, std = spread_stats
+                logger.info(f"📊 INITIAL SPREAD STATS: mean={mean:.3f}, std={std:.3f}")
+            return True
+        else:
+            logger.error(f"❌ Not enough valid symbols: {len(valid_symbols)}/4")
+            return False
+
+    def calculate_spread_stats(self):
+        """Расчет статистики исторического спреда"""
+        historical_spread = self.calculate_spread()
+        if historical_spread is not None and len(historical_spread) >= 100:
+            return np.mean(historical_spread), np.std(historical_spread)
+        return None
 
     def calculate_spread(self, current_prices=None):
         """
-        ИСПРАВЛЕННЫЙ метод - логарифмический спред
+        ПРАВИЛЬНЫЙ метод по R коду: отношение обычных цен (НЕ логарифм!)
         """
         if current_prices:
-            # ТЕКУЩИЙ СПРЕД
+            # ТЕКУЩИЙ СПРЕД: BTC цена / средняя цена альтов
             btc_price = current_prices[self.target]
             alt_prices = [current_prices[s] for s in self.basket_symbols if s in current_prices]
             
@@ -78,9 +107,8 @@ class SimpleBasketMonitor(Subject):
             if avg_alt_price <= 0:
                 return None
                 
-            # ЛОГАРИФМИЧЕСКИЙ СПРЕД - РЕШЕНИЕ ПРОБЛЕМЫ!
-            spread = np.log(btc_price) - np.log(avg_alt_price)
-            logger.info(f"📊 LOG SPREAD: log(BTC)={np.log(btc_price):.3f}, log(Alts)={np.log(avg_alt_price):.3f}, spread={spread:.3f}")
+            # ОТНОШЕНИЕ ЦЕН КАК В R КОДЕ!
+            spread = btc_price / avg_alt_price
             return spread
             
         else:
@@ -104,11 +132,8 @@ class SimpleBasketMonitor(Subject):
             alt_prices_matrix = np.array(alt_prices_matrix)
             avg_alt_prices = np.mean(alt_prices_matrix, axis=0)
             
-            # Защита от нулевых/отрицательных цен
-            btc_prices = np.maximum(btc_prices, 0.01)
-            avg_alt_prices = np.maximum(avg_alt_prices, 0.01)
-            
-            spread = np.log(btc_prices) - np.log(avg_alt_prices)
+            # ОТНОШЕНИЕ ЦЕН КАК В R КОДЕ!
+            spread = btc_prices / avg_alt_prices
             return spread
 
     def calculate_zscore(self, current_prices):
@@ -134,7 +159,7 @@ class SimpleBasketMonitor(Subject):
             
         z = (current_spread - mean) / std
         
-        logger.info(f"📊 SIMPLE CALC: spread={current_spread:.3f}, mean={mean:.3f}, std={std:.3f}, z={z:.2f}")
+        logger.info(f"📊 R-STYLE CALC: spread={current_spread:.3f}, mean={mean:.3f}, std={std:.3f}, z={z:.2f}")
         return z, current_spread, (mean, std)
 
     def get_current_prices(self):
@@ -174,14 +199,17 @@ class SimpleBasketMonitor(Subject):
         return "HOLD"
 
     def run(self, interval_minutes=1):
-        """Простой основной цикл"""
-        logger.info("🚀 Starting SIMPLE basket monitor...")
+        """Простой основной цикл с автокоррекцией"""
+        logger.info("🚀 Starting ULTIMATE R-CODE BASED MONITOR...")
         
-        if not self.fetch_historical_data():
-            logger.error("❌ Failed to load historical data")
+        # ПРИНУДИТЕЛЬНАЯ ЗАГРУЗКА ДАННЫХ
+        if not self.force_data_reload():
+            logger.error("❌ CRITICAL: Failed to load historical data")
             return
             
-        logger.info(f"🎯 Monitoring {len(self.basket_symbols)} symbols")
+        logger.info(f"🎯 Monitoring {len(self.basket_symbols)} symbols: {[s.split('/')[0] for s in self.basket_symbols]}")
+        
+        consecutive_bad_z = 0
         
         while True:
             try:
@@ -195,8 +223,22 @@ class SimpleBasketMonitor(Subject):
                 
                 current_time = datetime.utcnow().strftime('%H:%M:%S')
                 
+                # АВТОМАТИЧЕСКАЯ КОРРЕКЦИЯ АНОМАЛЬНЫХ Z-SCORE
+                if z is not None and abs(z) > 3.0:
+                    consecutive_bad_z += 1
+                    logger.warning(f"🚨 ABNORMAL Z-score: {z:.2f} (consecutive: {consecutive_bad_z})")
+                    
+                    if consecutive_bad_z >= 2:  # После 2 плохих Z-score подряд
+                        logger.info("🔄 AUTO-CORRECTING: Reloading historical data...")
+                        if self.force_data_reload():
+                            consecutive_bad_z = 0
+                            continue
+                else:
+                    consecutive_bad_z = 0
+                
                 if z is not None:
-                    logger.info(f"[{current_time}] Z: {z:6.2f} | Signal: {signal} | Spread: {spread:.3f}")
+                    status = "🚨 ABNORMAL" if abs(z) > 3.0 else "✅ NORMAL"
+                    logger.info(f"[{current_time}] Z: {z:6.2f} {status} | Signal: {signal} | Spread: {spread:.3f}")
                 else:
                     logger.info(f"[{current_time}] Z: NO DATA | Signal: {signal}")
                 
