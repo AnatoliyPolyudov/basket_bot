@@ -85,6 +85,7 @@ class OKXBasketMonitor(Subject):
         self.basket_weights = []
         self.historical_data = {}
         self.lookback_days = 60
+        self.normalization_factors = {}
 
     def fetch_historical_data(self):
         logger.info("Fetching historical data from OKX...")
@@ -123,7 +124,7 @@ class OKXBasketMonitor(Subject):
                 if len(x) == len(y):
                     corr = np.corrcoef(x, y)[0, 1]
                     if not np.isnan(corr):
-                        correlations.append(abs(corr))  # используем абсолютную корреляцию
+                        correlations.append(abs(corr))
                         valid_symbols.append(symbol)
                         asset_name = symbol.split('/')[0]
                         quality = (
@@ -141,8 +142,10 @@ class OKXBasketMonitor(Subject):
             logger.error("No valid symbols for basket weights.")
             return
 
-        # Веса пропорциональны корреляции (простой метод)
         self.basket_weights = np.array(correlations) / np.sum(correlations)
+
+        # Рассчитываем факторы нормализации
+        self.calculate_normalization_factors()
 
         print("="*50, flush=True)
         print("FINAL BASKET WITH WEIGHTS (correlation-based)", flush=True)
@@ -151,6 +154,18 @@ class OKXBasketMonitor(Subject):
             asset_name = s.split('/')[0]
             print(f"{asset_name:8} | Weight: {w:6.3f} | Correlation: {c:6.3f}", flush=True)
         print("="*50, flush=True)
+
+    def calculate_normalization_factors(self):
+        """Рассчитываем факторы нормализации на основе исторических данных"""
+        self.normalization_factors[self.target] = np.mean(self.historical_data[self.target])
+        
+        basket_prices = np.zeros(len(self.historical_data[self.target]))
+        for i, s in enumerate(self.basket_symbols):
+            basket_prices += self.basket_weights[i] * np.array(self.historical_data[s])
+        
+        self.normalization_factors['basket'] = np.mean(basket_prices)
+        
+        print(f"NORMALIZATION: BTC_mean={self.normalization_factors[self.target]:.2f}, basket_mean={self.normalization_factors['basket']:.4f}", flush=True)
 
     def get_current_prices(self):
         try:
@@ -178,8 +193,11 @@ class OKXBasketMonitor(Subject):
         for i, s in enumerate(self.basket_symbols):
             basket_prices += self.basket_weights[i] * np.array(self.historical_data[s][-min_len:])
         
-        # ПРОСТОЙ СПРЕД (без логарифма)
-        return target_prices / basket_prices
+        # НОРМАЛИЗАЦИЯ исторических данных
+        normalized_target = target_prices / self.normalization_factors[self.target]
+        normalized_basket = basket_prices / self.normalization_factors['basket']
+        
+        return normalized_target / normalized_basket
 
     def calculate_zscore(self, current_prices):
         if not current_prices or not all(s in current_prices for s in [self.target] + self.basket_symbols):
@@ -189,8 +207,11 @@ class OKXBasketMonitor(Subject):
         if basket_price_now <= 0:
             return None, None, None
             
-        # ПРОСТОЙ СПРЕД (без логарифма)
-        spread_now = current_prices[self.target] / basket_price_now
+        # НОРМАЛИЗАЦИЯ текущих цен
+        normalized_target_now = current_prices[self.target] / self.normalization_factors[self.target]
+        normalized_basket_now = basket_price_now / self.normalization_factors['basket']
+        
+        spread_now = normalized_target_now / normalized_basket_now
         spread_hist = self.calculate_spread_series()
         
         if spread_hist is None:
@@ -203,8 +224,9 @@ class OKXBasketMonitor(Subject):
         z = (spread_now - mean) / std
         
         # ОТЛАДОЧНЫЙ ВЫВОД
-        print(f"DEBUG: BTC={current_prices[self.target]:.2f}, basket={basket_price_now:.2f}", flush=True)
-        print(f"DEBUG: spread_now={spread_now:.2f}, mean={mean:.2f}, std={std:.2f}, z={z:.2f}", flush=True)
+        print(f"DEBUG: BTC={current_prices[self.target]:.2f} (norm={normalized_target_now:.3f})", flush=True)
+        print(f"DEBUG: basket={basket_price_now:.4f} (norm={normalized_basket_now:.3f})", flush=True)
+        print(f"DEBUG: spread_now={spread_now:.3f}, mean={mean:.3f}, std={std:.3f}, z={z:.2f}", flush=True)
         
         return z, spread_now, (mean, std)
 
@@ -243,7 +265,7 @@ class OKXBasketMonitor(Subject):
                 current_time = datetime.utcnow().strftime('%H:%M:%S')
                 
                 if z is not None:
-                    print(f"[{current_time}] Z-score: {z:6.2f} | Signal: {signal} | Spread: {spread:.2f}", flush=True)
+                    print(f"[{current_time}] Z-score: {z:6.2f} | Signal: {signal} | Spread: {spread:.3f}", flush=True)
                 else:
                     print(f"[{current_time}] Z-score: NO DATA | Signal: {signal}", flush=True)
 
