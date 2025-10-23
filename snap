@@ -84,26 +84,27 @@ class OKXBasketMonitor(Subject):
         ]
         self.basket_weights = []
         self.historical_data = {}
-        self.lookback_days = 60
+        # ИЗМЕНЕНИЕ: часовые данные вместо дневных
+        self.timeframe = "1h"           # часовой таймфрейм
+        self.lookback_bars = 168        # 168 часов = 7 дней
         self.normalization_factors = {}
 
     def fetch_historical_data(self):
-        logger.info("Fetching historical data from OKX...")
+        logger.info("Fetching HOURLY historical data from OKX...")
         for symbol in [self.target] + self.basket_symbols:
             try:
-                since = self.exchange.parse8601(
-                    (datetime.utcnow() - pd.Timedelta(days=self.lookback_days)).isoformat()
-                )
-                ohlcv = self.exchange.fetch_ohlcv(symbol, "1d", since=since, limit=self.lookback_days)
+                # ИЗМЕНЕНИЕ: используем часовые данные с limit
+                ohlcv = self.exchange.fetch_ohlcv(symbol, self.timeframe, limit=self.lookback_bars)
                 if not ohlcv:
                     logger.warning(f"No data for {symbol}")
                     continue
                 self.historical_data[symbol] = [c[4] for c in ohlcv]
-                logger.info(f"Loaded {len(self.historical_data[symbol])} days for {symbol}")
+                logger.info(f"Loaded {len(self.historical_data[symbol])} hours for {symbol}")
             except Exception as e:
                 logger.warning(f"Error loading {symbol}: {e}")
 
-        valid = [s for s in [self.target] + self.basket_symbols if s in self.historical_data and len(self.historical_data[s]) >= 20]
+        # ИЗМЕНЕНИЕ: минимум 24 часа данных вместо 20 дней
+        valid = [s for s in [self.target] + self.basket_symbols if s in self.historical_data and len(self.historical_data[s]) >= 24]
         if len(valid) < 3:
             logger.error("Not enough valid symbols for analysis.")
             return False
@@ -185,7 +186,8 @@ class OKXBasketMonitor(Subject):
 
     def calculate_spread_series(self):
         min_len = min(len(self.historical_data[s]) for s in [self.target] + self.basket_symbols if s in self.historical_data)
-        if min_len < 20:
+        # ИЗМЕНЕНИЕ: минимум 24 часа вместо 20 дней
+        if min_len < 24:
             return None
             
         target_prices = np.array(self.historical_data[self.target][-min_len:])
