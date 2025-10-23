@@ -51,7 +51,7 @@ class OKXBasketMonitor(Subject):
             except Exception as e:
                 logger.warning(f"Error loading {symbol}: {e}")
 
-        valid = [s for s in [self.target] + self.basket_symbols if s in self.historical_data and len(self.historical_data[s]) >= 20]  # increased to 20
+        valid = [s for s in [self.target] + self.basket_symbols if s in self.historical_data and len(self.historical_data[s]) >= 20]
         if len(valid) < 3:
             logger.error("Not enough valid symbols for analysis.")
             return False
@@ -72,14 +72,12 @@ class OKXBasketMonitor(Subject):
                 if len(x) != len(y):
                     continue
                     
-                # Calculate correlation
                 corr = np.corrcoef(x, y)[0, 1]
                 if np.isnan(corr):
                     continue
                     
                 valid_symbols.append(symbol)
 
-                # Calculate volatility using log returns
                 returns = np.diff(np.log(y))
                 sigma = max(np.std(returns), 1e-4)
                 volatilities[symbol] = sigma
@@ -94,23 +92,22 @@ class OKXBasketMonitor(Subject):
                     "NO CORR"
                 )
                 direction = "positive" if corr > 0 else "negative"
-                print(f"{asset_name:8} | Corr: {corr:6.3f} | {corr_percent:5.1f}% | {quality:8} | {direction} | σ={sigma:.4f}", flush=True)
+                print(f"{asset_name:8} | Corr: {corr:6.3f} | {corr_percent:5.1f}% | {quality:8} | {direction} | vol={sigma:.4f}", flush=True)
 
         self.basket_symbols = valid_symbols
         if not self.basket_symbols:
             logger.error("No valid symbols for basket weights.")
             return
 
-        # Inverse variance weighting (1/σ²)
         inv_vars = np.array([1 / (volatilities[s]**2) for s in self.basket_symbols])
         self.basket_weights = inv_vars / np.sum(inv_vars)
 
         print("="*50, flush=True)
-        print("FINAL BASKET WITH WEIGHTS (1/σ² method)", flush=True)
+        print("FINAL BASKET WITH WEIGHTS (1/vol method)", flush=True)
         print("="*50, flush=True)
         for s, w in zip(self.basket_symbols, self.basket_weights):
             asset_name = s.split('/')[0]
-            print(f"{asset_name:8} | Weight: {w:6.3f} | σ={volatilities[s]:.4f}", flush=True)
+            print(f"{asset_name:8} | Weight: {w:6.3f} | vol={volatilities[s]:.4f}", flush=True)
         print("="*50, flush=True)
 
     def get_current_prices(self):
@@ -227,7 +224,7 @@ class OKXBasketMonitor(Subject):
 
 
 def telegram_polling(trader):
-    TELEGRAM_BOT_TOKEN = "8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng"  # restored original token
+    TELEGRAM_BOT_TOKEN = "8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng"
     offset = None
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
 
