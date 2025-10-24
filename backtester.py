@@ -1,4 +1,4 @@
-# backtester.py - ИСПРАВЛЕННАЯ ЛОГИКА
+# backtester.py - ИСПРАВЛЕННЫЙ РАСЧЕТ PnL
 import ccxt
 import pandas as pd
 import numpy as np
@@ -23,7 +23,7 @@ def fetch_historical_data(symbol: str, days: int = 365) -> pd.Series:
         return pd.Series()
 
 def run_backtest(pair_name: str, days: int = 365):
-    """Запуск бэктеста с исправленной логикой"""
+    """Запуск бэктеста с исправленной логикой PnL"""
     print(f"🔍 Backtesting {pair_name} for {days} days...")
     
     analyzer = PairAnalyzer()
@@ -56,11 +56,14 @@ def run_backtest(pair_name: str, days: int = 365):
     
     aligned_data['spread'] = aligned_data['price_a'] / aligned_data['price_b']
     
-    # Бэктестинг с ПРАВИЛЬНОЙ логикой
+    # Бэктестинг с ПРАВИЛЬНЫМ расчетом PnL
     returns = []
     positions = []  # 1 = long A/short B, -1 = short A/long B, 0 = flat
     entry_z = 1.0
     exit_z = 0.5
+    
+    # Словарь для хранения цен входа
+    entry_prices = {}  # {position_type: (entry_spread, entry_idx)}
     
     print(f"🎯 Trading logic: Enter when |Z| > {entry_z}, Exit when |Z| < {exit_z}")
     
@@ -73,50 +76,63 @@ def run_backtest(pair_name: str, days: int = 365):
         else:
             z_score = 0
         
-        # ИСПРАВЛЕННАЯ ЛОГИКА ТРЕЙДИНГА
+        # Текущая позиция
         current_position = positions[-1] if positions else 0
         
+        # ЛОГИКА ТРЕЙДИНГА
         if current_position == 0:  # Нет позиции
             if z_score > entry_z:  # Spread высокий - short A / long B
                 positions.append(-1)
-                print(f"📈 ENTRY SHORT at day {i}: Z = {z_score:.2f}")
+                entry_prices[-1] = (current_spread, i)
+                print(f"📈 ENTRY SHORT at day {i}: Z = {z_score:.2f}, Spread = {current_spread:.4f}")
             elif z_score < -entry_z:  # Spread низкий - long A / short B
                 positions.append(1)
-                print(f"📈 ENTRY LONG at day {i}: Z = {z_score:.2f}")
+                entry_prices[1] = (current_spread, i)
+                print(f"📈 ENTRY LONG at day {i}: Z = {z_score:.2f}, Spread = {current_spread:.4f}")
             else:
                 positions.append(0)
                 
         elif current_position == 1:  # Long A / Short B
             if z_score > -exit_z:  # Z-score вернулся к 0 - закрываем
+                if 1 in entry_prices:
+                    entry_spread, entry_idx = entry_prices[1]
+                    exit_spread = current_spread
+                    
+                    # PnL для long A/short B: выигрываем если спред растет
+                    pnl = (exit_spread - entry_spread) / entry_spread
+                    pnl -= 0.002  # Комиссия
+                    
+                    returns.append(pnl)
+                    print(f"📉 EXIT LONG at day {i}: Z = {z_score:.2f}")
+                    print(f"   Spread: {entry_spread:.4f} → {exit_spread:.4f}")
+                    print(f"   PnL: {pnl*100:+.2f}%")
+                    
+                    del entry_prices[1]
+                
                 positions.append(0)
-                print(f"📉 EXIT LONG at day {i}: Z = {z_score:.2f}")
             else:
                 positions.append(1)  # Держим позицию
                 
         elif current_position == -1:  # Short A / Long B
             if z_score < exit_z:  # Z-score вернулся к 0 - закрываем
+                if -1 in entry_prices:
+                    entry_spread, entry_idx = entry_prices[-1]
+                    exit_spread = current_spread
+                    
+                    # PnL для short A/long B: выигрываем если спред падает
+                    pnl = (entry_spread - exit_spread) / entry_spread
+                    pnl -= 0.002  # Комиссия
+                    
+                    returns.append(pnl)
+                    print(f"📉 EXIT SHORT at day {i}: Z = {z_score:.2f}")
+                    print(f"   Spread: {entry_spread:.4f} → {exit_spread:.4f}")
+                    print(f"   PnL: {pnl*100:+.2f}%")
+                    
+                    del entry_prices[-1]
+                
                 positions.append(0)
-                print(f"📉 EXIT SHORT at day {i}: Z = {z_score:.2f}")
             else:
                 positions.append(-1)  # Держим позицию
-        
-        # Расчет PnL при закрытии позиции
-        if i > 0 and len(positions) > 1:
-            if positions[-1] == 0 and positions[-2] != 0:  # Только что закрыли позицию
-                # PnL = изменение спреда в нашу пользу
-                entry_idx = i - (positions[-2:].index(positions[-2]) if positions[-2] != 0 else 0)
-                entry_spread = aligned_data['spread'].iloc[entry_idx]
-                exit_spread = aligned_data['spread'].iloc[i]
-                
-                if positions[-2] == 1:  # Был long A/short B - выигрываем если спред растет
-                    pnl = (exit_spread - entry_spread) / entry_spread
-                else:  # Был short A/long B - выигрываем если спред падает
-                    pnl = (entry_spread - exit_spread) / entry_spread
-                
-                # Комиссия
-                pnl -= 0.002
-                returns.append(pnl)
-                print(f"💰 PnL: {pnl*100:.2f}%")
     
     # Результаты
     if returns:
@@ -124,20 +140,24 @@ def run_backtest(pair_name: str, days: int = 365):
         total_return = (returns_series + 1).prod() - 1
         
         print(f"\n🎯 BACKTEST RESULTS:")
-        print(f"Total Return: {total_return*100:.2f}%")
+        print(f"Total Return: {total_return*100:+.2f}%")
         print(f"Number of Trades: {len(returns)}")
         print(f"Win Rate: {(returns_series > 0).mean()*100:.1f}%")
-        print(f"Avg Trade Return: {returns_series.mean()*100:.2f}%")
-        print(f"Best Trade: {returns_series.max()*100:.2f}%")
-        print(f"Worst Trade: {returns_series.min()*100:.2f}%")
+        print(f"Avg Trade Return: {returns_series.mean()*100:+.2f}%")
+        print(f"Best Trade: {returns_series.max()*100:+.2f}%")
+        print(f"Worst Trade: {returns_series.min()*100:+.2f}%")
+        
+        # Дополнительная статистика
+        if returns_series.std() > 0:
+            sharpe = returns_series.mean() / returns_series.std() * np.sqrt(252)
+            print(f"Sharpe Ratio: {sharpe:.2f}")
         
         # Покажем несколько сделок для проверки
-        print(f"\n📋 First 5 trades:")
-        for j, ret in enumerate(returns[:5]):
+        print(f"\n📋 Trade Details:")
+        for j, ret in enumerate(returns):
             print(f"  Trade {j+1}: {ret*100:+.2f}%")
     else:
         print(f"\n❌ No trades executed")
-        print(f"Check trading logic - Z-scores reached {max(z_scores):.2f}")
 
 def main():
     parser = argparse.ArgumentParser()
