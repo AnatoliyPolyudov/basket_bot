@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import statsmodels.api as sm
+from statsmodels.tsa.stattools import adfuller
 
 def calculate_spread(df):
     # df: колонки ['A', 'B']
@@ -9,6 +10,12 @@ def calculate_spread(df):
     beta = model.params[1]
     df['spread'] = df['A'] - beta * df['B']
     return df, beta
+
+def test_stationarity(spread, significance=0.05):
+    """Проверяет, стационарен ли спред через ADF тест"""
+    result = adfuller(spread)
+    pvalue = result[1]
+    return pvalue < significance
 
 def generate_signals(df, window=35, entry_z=1, exit_z=0.5):
     df['mean'] = df['spread'].rolling(window).mean()
@@ -22,9 +29,15 @@ def generate_signals(df, window=35, entry_z=1, exit_z=0.5):
     
     return df
 
-def BacktestPair(df, window=35):
+def BacktestPair(df, window=35, adf_threshold=0.05):
     df, beta = calculate_spread(df)
+    
+    # Проверяем стационарность спреда
+    if not test_stationarity(df['spread'], significance=adf_threshold):
+        print("Спред не стационарен! Пара пропущена.")
+        df['TotalReturn'] = 0
+        return df
+    
     df = generate_signals(df, window)
-    # здесь можно добавить расчёт доходности на основе сигналов
     df['TotalReturn'] = df['signal'].shift(1) * (df['spread'].diff())
     return df
