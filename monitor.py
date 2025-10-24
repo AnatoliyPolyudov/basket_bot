@@ -334,7 +334,7 @@ class RStylePairMonitor(Subject):
                         status = "🚨 ABNORMAL" if abs(z) > 3.0 else "✅ NORMAL"
                         
                         if signal != "HOLD":
-                            # 🆕 ИСПРАВЛЕН ФОРМАТ ВЫВОДА
+                            # 🆕 ИСПРАВЛЕН ФОРМАТ ВЫВОДА - ПРОВЕРКА НА None
                             logger.info(f"[{current_time}] {pair['name']}: Z={z:.2f} {status} | {signal}")
                     
                     # Собираем данные для уведомлений
