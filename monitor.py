@@ -422,7 +422,8 @@ def main():
     monitor = RStylePairMonitor(pair_preset=args.preset)
     monitor.attach(ConsoleObserver())
 
-    trader = OKXBasketTrader(paper_trading=True, max_exposure=1000)
+    # 🆕 ОБНОВЛЕННЫЙ TRADER С НАЧАЛЬНЫМ БАЛАНСОМ
+    trader = OKXBasketTrader(paper_trading=True, max_exposure=1000, initial_balance=10000)
     monitor.attach(trader)
 
     telegram_observer = TelegramObserver(trader=trader)
