@@ -359,11 +359,42 @@ except Exception as e:
         ;;
     
     full-update)
-        print_info "FULL UPDATE - SYNC CODE & CREATE SNAPSHOT"
+        print_info "FULL UPDATE - PULL → SNAPSHOT → PUSH"
         cd "$BOT_DIR"
-        ./run_bot.sh git-sync
-        ./run_bot.sh create-snapshot
-        print_status "Full update completed"
+        
+        # 1. Скачать изменения из удаленного репозитория
+        print_info "Step 1: Pulling changes from remote..."
+        git pull origin main
+        if [ $? -eq 0 ]; then
+            print_status "Code updated successfully from remote"
+        else
+            print_error "Git pull failed"
+            exit 1
+        fi
+        
+        # 2. Создать снапшот текущего состояния
+        print_info "Step 2: Creating code snapshot..."
+        rm -f snap
+        for f in *.py; do
+            if [ -f "$f" ]; then
+                echo -e "\n\n===== $f =====\n\n" >> snap
+                cat "$f" >> snap
+            fi
+        done
+        print_status "Snapshot created: snap"
+        
+        # 3. Отправить изменения на удаленный репозиторий
+        print_info "Step 3: Pushing changes to remote..."
+        git add .
+        git commit -m "Update: $(date '+%Y-%m-%d %H:%M:%S')" || true
+        git push origin main
+        if [ $? -eq 0 ]; then
+            print_status "Changes pushed successfully to remote"
+        else
+            print_error "Git push failed"
+        fi
+        
+        print_status "Full update completed safely"
         ;;
     
     help|--help|-h|*)
@@ -405,7 +436,7 @@ except Exception as e:
         echo ""
         echo -e "${BLUE}🚀 DEPLOY COMMANDS:${NC}"
         echo "  $0 deploy               - Full deploy: update & restart"
-        echo "  $0 full-update          - Full update: sync code & snapshot"
+        echo "  $0 full-update          - Full update: PULL → SNAPSHOT → PUSH"
         echo ""
         echo -e "${YELLOW}📋 AVAILABLE PRESETS:${NC}"
         echo "  ultra_liquid_8, liquid_pairs_15, auto_top_30, auto_top_20"
@@ -415,6 +446,6 @@ except Exception as e:
         echo "  ./run_bot.sh start ultra_liquid_8    # 🚀 Start with best pairs"
         echo "  ./run_bot.sh quick-restart           # 🔄 Quick restart"
         echo "  ./run_bot.sh deploy                  # 🚀 Full deploy"
-        echo "  ./run_bot.sh full-update             # 📦 Full update with git sync"
+        echo "  ./run_bot.sh full-update             # 📦 Safe update: PULL→SNAPSHOT→PUSH"
         ;;
 esac
