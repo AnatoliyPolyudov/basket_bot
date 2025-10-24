@@ -1,4 +1,4 @@
-# pairs_core.py - Упрощенная логика анализа пар
+# pairs_core.py - ДИНАМИЧЕСКИЙ ТОП ПАР С OKX
 import ccxt
 import pandas as pd
 import numpy as np
@@ -6,21 +6,121 @@ from statsmodels.tsa.stattools import adfuller
 from scipy.stats import zscore
 import logging
 from typing import List, Dict, Optional
+import time
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class PairAnalyzer:
-    def __init__(self):
+    def __init__(self, n_pairs: int = 30):
         self.exchange = ccxt.okx({
             "enableRateLimit": True,
             "options": {"defaultType": "swap"}
         })
-        self.pairs = self.get_top_pairs(30)
+        self.n_pairs = n_pairs
+        self.pairs = self.get_dynamic_top_pairs(n_pairs)
         
-    def get_top_pairs(self, n_pairs: int) -> List[Dict]:
-        """Топ пар для мониторинга"""
-        top_symbols = [
+    def get_dynamic_top_pairs(self, n_pairs: int) -> List[Dict]:
+        """Динамически получает топ пар по объему с OKX"""
+        try:
+            print(f"📊 Fetching top {n_pairs} pairs from OKX...")
+            
+            # Получаем все рынки
+            markets = self.exchange.load_markets()
+            
+            # Фильтруем USDT пары спот-маркет
+            usdt_pairs = [
+                symbol for symbol in markets 
+                if symbol.endswith('/USDT:USDT') and markets[symbol]['active']
+            ]
+            
+            print(f"📈 Found {len(usdt_pairs)} active USDT pairs")
+            
+            # Получаем объемы для топ пар (лимитируем запросы)
+            top_symbols = []
+            batch_size = 20
+            
+            for i in range(0, min(100, len(usdt_pairs)), batch_size):
+                batch = usdt_pairs[i:i + batch_size]
+                try:
+                    tickers = self.exchange.fetch_tickers(batch)
+                    
+                    # Сортируем по объему (baseVolume)
+                    batch_volumes = []
+                    for symbol in batch:
+                        if symbol in tickers and tickers[symbol].get('baseVolume'):
+                            volume = tickers[symbol]['baseVolume']
+                            batch_volumes.append((symbol, volume))
+                    
+                    # Добавляем топ из батча
+                    batch_volumes.sort(key=lambda x: x[1], reverse=True)
+                    top_symbols.extend([s[0] for s in batch_volumes[:10]])
+                    
+                    time.sleep(0.5)  # Rate limiting
+                    
+                except Exception as e:
+                    print(f"⚠️ Error fetching batch: {e}")
+                    continue
+            
+            # Берем топ N символов по объему
+            top_symbols = list(dict.fromkeys(top_symbols))[:n_pairs * 2]  # Берем в 2 раза больше для создания пар
+            
+            print(f"🎯 Top {len(top_symbols)} symbols by volume: {[s.split('/')[0] for s in top_symbols[:10]]}...")
+            
+            # Создаем пары из топ символов
+            pairs = []
+            max_pairs_per_symbol = 3  # Максимум пар на один символ
+            
+            for i, symbol_a in enumerate(top_symbols):
+                symbol_a_name = symbol_a.split('/')[0]
+                pairs_added = 0
+                
+                for j, symbol_b in enumerate(top_symbols[i+1:], i+1):
+                    if pairs_added >= max_pairs_per_symbol:
+                        break
+                        
+                    symbol_b_name = symbol_b.split('/')[0]
+                    
+                    # Пропускаем пары с одинаковой базой
+                    if symbol_a_name != symbol_b_name:
+                        pairs.append({
+                            'asset_a': symbol_a,
+                            'asset_b': symbol_b,
+                            'name': f"{symbol_a_name}_{symbol_b_name}",
+                            'base_volume_a': self.get_symbol_volume(symbol_a),
+                            'base_volume_b': self.get_symbol_volume(symbol_b)
+                        })
+                        pairs_added += 1
+                
+                if len(pairs) >= n_pairs:
+                    break
+            
+            # Сортируем пары по совокупному объему
+            pairs.sort(key=lambda x: (x.get('base_volume_a', 0) + x.get('base_volume_b', 0)), reverse=True)
+            pairs = pairs[:n_pairs]
+            
+            print(f"✅ Created {len(pairs)} trading pairs")
+            print(f"📋 Sample pairs: {[p['name'] for p in pairs[:5]]}...")
+            
+            return pairs
+            
+        except Exception as e:
+            print(f"❌ Error fetching dynamic pairs: {e}")
+            return self.get_fallback_pairs(n_pairs)
+    
+    def get_symbol_volume(self, symbol: str) -> float:
+        """Получает объем для символа"""
+        try:
+            ticker = self.exchange.fetch_ticker(symbol)
+            return ticker.get('baseVolume', 0)
+        except:
+            return 0
+    
+    def get_fallback_pairs(self, n_pairs: int) -> List[Dict]:
+        """Резервные пары если не удалось получить динамические"""
+        print("🔄 Using fallback pair list...")
+        
+        fallback_symbols = [
             "BTC/USDT:USDT", "ETH/USDT:USDT", "BNB/USDT:USDT", "SOL/USDT:USDT",
             "XRP/USDT:USDT", "ADA/USDT:USDT", "AVAX/USDT:USDT", "DOT/USDT:USDT",
             "LINK/USDT:USDT", "LTC/USDT:USDT", "ATOM/USDT:USDT", "DOGE/USDT:USDT",
@@ -28,12 +128,11 @@ class PairAnalyzer:
             "FIL/USDT:USDT", "ETC/USDT:USDT", "EOS/USDT:USDT", "AAVE/USDT:USDT"
         ]
         
-        # Создаем пары BTC/ETH, BTC/BNB, ETH/BNB и т.д.
         pairs = []
-        for i in range(min(10, len(top_symbols))):
-            for j in range(i + 1, min(i + 6, len(top_symbols))):
-                asset_a = top_symbols[i]
-                asset_b = top_symbols[j]
+        for i in range(min(10, len(fallback_symbols))):
+            for j in range(i + 1, min(i + 6, len(fallback_symbols))):
+                asset_a = fallback_symbols[i]
+                asset_b = fallback_symbols[j]
                 name_a = asset_a.split('/')[0]
                 name_b = asset_b.split('/')[0]
                 
@@ -51,12 +150,27 @@ class PairAnalyzer:
         """Текущие цены для всех символов"""
         try:
             symbols = list(set([p['asset_a'] for p in self.pairs] + [p['asset_b'] for p in self.pairs]))
-            tickers = self.exchange.fetch_tickers(symbols)
-            return {symbol: ticker['last'] for symbol, ticker in tickers.items() if ticker.get('last')}
+            all_prices = {}
+            
+            # Разбиваем на батчи чтобы избежать лимитов
+            batch_size = 10
+            for i in range(0, len(symbols), batch_size):
+                batch = symbols[i:i + batch_size]
+                try:
+                    tickers = self.exchange.fetch_tickers(batch)
+                    for symbol in batch:
+                        if symbol in tickers and tickers[symbol].get('last'):
+                            all_prices[symbol] = tickers[symbol]['last']
+                    time.sleep(0.3)
+                except Exception as e:
+                    logger.warning(f"Batch price error: {e}")
+            
+            return all_prices
         except Exception as e:
             logger.error(f"Error fetching prices: {e}")
             return None
-    
+
+    # Остальные методы остаются без изменений
     def calculate_spread(self, pair: Dict, prices: Dict) -> Optional[float]:
         """Расчет спреда между парой"""
         try:
@@ -83,7 +197,7 @@ class PairAnalyzer:
         # ADF тест (готовой функцией)
         if len(historical_data) >= 60:
             adf_stat = adfuller(historical_data, maxlag=1)[0]
-            adf_passed = adf_stat < -2.0  # Упрощенный критерий
+            adf_passed = adf_stat < -2.0
         else:
             adf_passed = False
         
