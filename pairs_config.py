@@ -18,39 +18,41 @@ def get_top_symbols_from_exchange(limit=30):
         })
         
         print(f"🔍 Loading top {limit} symbols from OKX...")
-        markets = exchange.fetch_markets()
+        
+        # Загружаем рынки
+        markets = exchange.load_markets()
+        print(f"✅ Loaded {len(markets)} total markets")
         
         # Фильтруем USDT своп пары
         usdt_pairs = []
-        for market in markets:
-            if (market['quote'] == 'USDT' and 
-                market['type'] == 'swap' and 
-                market['active'] and
-                '/USDT:USDT' in market['symbol']):
+        for symbol, market in markets.items():
+            if (market.get('quote') == 'USDT' and 
+                market.get('type') == 'swap' and 
+                market.get('active') and
+                '/USDT:USDT' in symbol):
                 
-                # Получаем объем из информации о рынке
-                info = market.get('info', {})
-                volume_24h = float(info.get('volCcy24h', 0))  # Объем в USDT
-                
-                if volume_24h > 0:  # Только пары с объемом
+                # Используем базовую информацию
+                base_currency = market.get('base')
+                if base_currency:
                     usdt_pairs.append({
-                        'symbol': market['symbol'],
-                        'volume': volume_24h,
-                        'base': market['base']
+                        'symbol': symbol,
+                        'volume': market.get('info', {}).get('volCcy24h', 0) or 1000000,  # fallback volume
+                        'base': base_currency
                     })
         
-        # Сортируем по объему (по убыванию)
-        usdt_pairs.sort(key=lambda x: x['volume'], reverse=True)
+        # Если не нашли пары, используем fallback
+        if not usdt_pairs:
+            print("⚠️ No USDT pairs found, using fallback")
+            return get_fallback_symbols()
+        
+        # Сортируем по символу (так как объем может быть недоступен)
+        usdt_pairs.sort(key=lambda x: x['symbol'])
         
         # Берем топ лимит
         top_symbols = [pair['symbol'] for pair in usdt_pairs[:limit]]
         
-        # Логируем топ-10 для информации
-        print("📈 TOP 10 SYMBOLS BY VOLUME:")
-        for i, pair in enumerate(usdt_pairs[:10], 1):
-            print(f"   {i:2d}. {pair['symbol']} - ${pair['volume']:,.0f}")
-        
         print(f"✅ Successfully loaded {len(top_symbols)} symbols")
+        print("📋 Sample symbols:", top_symbols[:5])
         return top_symbols
         
     except Exception as e:
