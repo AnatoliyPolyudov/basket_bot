@@ -4,7 +4,6 @@ import ccxt
 from itertools import combinations
 import pandas as pd
 
-# --- Настройки ---
 TIMEFRAME = '1d'
 LIMIT = 365  # дней истории
 
@@ -12,7 +11,6 @@ def get_top10_symbols():
     exchange = ccxt.okx()
     exchange.load_markets()
     symbols = [s for s in exchange.symbols if '/USDT' in s]
-    # сортируем по 24h объёму
     symbols = sorted(
         symbols, 
         key=lambda x: exchange.fetch_ticker(x)['quoteVolume'], 
@@ -37,25 +35,31 @@ def main():
     print("Всего пар:", len(pairs))
     
     results = []
+    valid_pairs = []
+    
     for base, quote in pairs:
         print(f"Бэктест для пары {base}/{quote}")
         
-        # Загружаем цены
         df_base = fetch_ohlcv_df(base)
         df_quote = fetch_ohlcv_df(quote)
+        df = df_base.join(df_quote, how='inner').dropna()
         
-        # Объединяем по дате
-        df = df_base.join(df_quote, how='inner')
-        df.dropna(inplace=True)
-        
-        # Бэктест пары
         df_backtest = BacktestPair(df)
-        results.append(df_backtest['TotalReturn'])
+        
+        # Добавляем только стационарные пары
+        if df_backtest['TotalReturn'].sum() != 0:
+            results.append(df_backtest['TotalReturn'])
+            valid_pairs.append((base, quote))
+        else:
+            print(f"Пара {base}/{quote} пропущена (нестационарная)")
     
-    # Портфель
-    portfolio_returns = BacktestPortfolio(results)
-    print("Портфельная доходность:")
-    print(portfolio_returns.tail())
+    if results:
+        portfolio_returns = BacktestPortfolio(results)
+        print("Портфельная доходность по стационарным парам:")
+        print(portfolio_returns.tail())
+        print("Использованные пары:", valid_pairs)
+    else:
+        print("Нет ни одной стационарной пары!")
 
 if __name__ == "__main__":
     main()
