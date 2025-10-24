@@ -1,0 +1,444 @@
+
+
+===== main.py =====
+
+
+# main.py - Главный файл для запуска
+import time
+import logging
+import os
+from pairs_core import PairAnalyzer
+from telegram_bot import TelegramBot, SimplePositionsManager
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+def main():
+    # Инициализация компонентов
+    analyzer = PairAnalyzer()
+    positions_manager = SimplePositionsManager()
+    
+    # Telegram бот (токен из .env)
+    telegram_token = os.getenv('TELEGRAM_BOT_TOKEN', '8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng')
+    chat_id = os.getenv('TELEGRAM_CHAT_ID', '317217451')
+    
+    bot = TelegramBot(telegram_token, chat_id)
+    
+    logger.info("🚀 Starting Simplified Pairs Monitor...")
+    bot.send_message("🤖 Pairs Monitor Started!")
+    
+    # Основной цикл мониторинга
+    while True:
+        try:
+            # Получаем анализ пар
+            report = analyzer.get_analysis_report()
+            
+            if 'error' not in report:
+                # Отправляем статус каждые 10 минут
+                bot.send_status_report(report, positions_manager.get_open_positions())
+                
+                # Проверяем и отправляем сигналы
+                for pair_data in report['pairs_data']:
+                    signal = pair_data.get('signal')
+                    if signal not in ['HOLD', 'NO_DATA']:
+                        bot.send_signal_alert(pair_data)
+            
+            # Ждем перед следующим обновлением
+            time.sleep(600)  # 10 минут
+            
+        except KeyboardInterrupt:
+            logger.info("🛑 Monitor stopped by user")
+            bot.send_message("🛑 Pairs Monitor Stopped")
+            break
+        except Exception as e:
+            logger.error(f"❌ Error in main loop: {e}")
+            time.sleep(60)
+
+if __name__ == "__main__":
+    main()
+
+
+===== pairs_core.py =====
+
+
+# pairs_core.py - Упрощенная логика анализа пар
+import ccxt
+import pandas as pd
+import numpy as np
+from statsmodels.tsa.stattools import adfuller
+from scipy.stats import zscore
+import logging
+from typing import List, Dict, Optional
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class PairAnalyzer:
+    def __init__(self):
+        self.exchange = ccxt.okx({
+            "enableRateLimit": True,
+            "options": {"defaultType": "swap"}
+        })
+        self.pairs = self.get_top_pairs(30)
+        
+    def get_top_pairs(self, n_pairs: int) -> List[Dict]:
+        """Топ пар для мониторинга"""
+        top_symbols = [
+            "BTC/USDT:USDT", "ETH/USDT:USDT", "BNB/USDT:USDT", "SOL/USDT:USDT",
+            "XRP/USDT:USDT", "ADA/USDT:USDT", "AVAX/USDT:USDT", "DOT/USDT:USDT",
+            "LINK/USDT:USDT", "LTC/USDT:USDT", "ATOM/USDT:USDT", "DOGE/USDT:USDT",
+            "MATIC/USDT:USDT", "TRX/USDT:USDT", "XLM/USDT:USDT", "BCH/USDT:USDT",
+            "FIL/USDT:USDT", "ETC/USDT:USDT", "EOS/USDT:USDT", "AAVE/USDT:USDT"
+        ]
+        
+        # Создаем пары BTC/ETH, BTC/BNB, ETH/BNB и т.д.
+        pairs = []
+        for i in range(min(10, len(top_symbols))):
+            for j in range(i + 1, min(i + 6, len(top_symbols))):
+                asset_a = top_symbols[i]
+                asset_b = top_symbols[j]
+                name_a = asset_a.split('/')[0]
+                name_b = asset_b.split('/')[0]
+                
+                pairs.append({
+                    'asset_a': asset_a,
+                    'asset_b': asset_b,
+                    'name': f"{name_a}_{name_b}"
+                })
+                
+                if len(pairs) >= n_pairs:
+                    return pairs
+        return pairs
+    
+    def get_current_prices(self) -> Optional[Dict]:
+        """Текущие цены для всех символов"""
+        try:
+            symbols = list(set([p['asset_a'] for p in self.pairs] + [p['asset_b'] for p in self.pairs]))
+            tickers = self.exchange.fetch_tickers(symbols)
+            return {symbol: ticker['last'] for symbol, ticker in tickers.items() if ticker.get('last')}
+        except Exception as e:
+            logger.error(f"Error fetching prices: {e}")
+            return None
+    
+    def calculate_spread(self, pair: Dict, prices: Dict) -> Optional[float]:
+        """Расчет спреда между парой"""
+        try:
+            price_a = prices.get(pair['asset_a'])
+            price_b = prices.get(pair['asset_b'])
+            if price_a and price_b and price_b > 0:
+                return price_a / price_b
+        except Exception as e:
+            logger.error(f"Error calculating spread for {pair['name']}: {e}")
+        return None
+    
+    def analyze_pair(self, pair: Dict, prices: Dict, historical_data: List[float]) -> Dict:
+        """Полный анализ одной пары"""
+        current_spread = self.calculate_spread(pair, prices)
+        if not current_spread or not historical_data:
+            return {
+                'pair_name': pair['name'],
+                'signal': 'NO_DATA',
+                'z_score': None,
+                'adf_passed': False,
+                'current_spread': current_spread
+            }
+        
+        # ADF тест (готовой функцией)
+        if len(historical_data) >= 60:
+            adf_stat = adfuller(historical_data, maxlag=1)[0]
+            adf_passed = adf_stat < -2.0  # Упрощенный критерий
+        else:
+            adf_passed = False
+        
+        # Z-score (готовой функцией)
+        if len(historical_data) >= 20:
+            z_scores = zscore(historical_data, ddof=1)
+            current_z = z_scores[-1] if not np.isnan(z_scores[-1]) else None
+        else:
+            current_z = None
+        
+        # Генерация сигнала
+        signal = self.generate_signal(current_z, adf_passed, pair['name'])
+        
+        return {
+            'pair_name': pair['name'],
+            'signal': signal,
+            'z_score': current_z,
+            'adf_passed': adf_passed,
+            'current_spread': current_spread,
+            'price_a': prices.get(pair['asset_a']),
+            'price_b': prices.get(pair['asset_b'])
+        }
+    
+    def generate_signal(self, z_score: Optional[float], adf_passed: bool, pair_name: str) -> str:
+        """Генерация торгового сигнала"""
+        if z_score is None or not adf_passed:
+            return "NO_DATA"
+        
+        if z_score > 1.0:
+            return f"SHORT_{pair_name.split('_')[0]}_LONG_{pair_name.split('_')[1]}"
+        elif z_score < -1.0:
+            return f"LONG_{pair_name.split('_')[0]}_SHORT_{pair_name.split('_')[1]}"
+        elif abs(z_score) < 0.5:
+            return "EXIT_POSITION"
+        else:
+            return "HOLD"
+    
+    def get_analysis_report(self) -> Dict:
+        """Полный отчет по всем парам"""
+        prices = self.get_current_prices()
+        if not prices:
+            return {'error': 'Failed to fetch prices'}
+        
+        report = {
+            'timestamp': pd.Timestamp.now(),
+            'pairs_data': [],
+            'total_pairs': len(self.pairs),
+            'active_pairs': 0,
+            'trading_signals': 0
+        }
+        
+        for pair in self.pairs:
+            # В реальной реализации здесь была бы историческая data
+            # Для демо используем случайные данные
+            historical_data = np.random.normal(1.0, 0.1, 100).tolist()
+            
+            pair_analysis = self.analyze_pair(pair, prices, historical_data)
+            report['pairs_data'].append(pair_analysis)
+            
+            if pair_analysis['adf_passed']:
+                report['active_pairs'] += 1
+            if pair_analysis['signal'] not in ['HOLD', 'NO_DATA']:
+                report['trading_signals'] += 1
+        
+        return report
+
+
+===== telegram_bot.py =====
+
+
+# telegram_bot.py - Упрощенный Telegram бот с кнопками
+import requests
+import json
+import logging
+from typing import Optional, List, Dict
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class TelegramBot:
+    def __init__(self, token: str, chat_id: str):
+        self.token = token
+        self.chat_id = chat_id
+        self.base_url = f"https://api.telegram.org/bot{token}"
+        
+    def safe_format_number(self, value, precision=2):
+        """Безопасное форматирование чисел"""
+        try:
+            if value is None:
+                return "N/A"
+            return f"{float(value):.{precision}f}"
+        except (ValueError, TypeError):
+            return str(value)
+        
+    def send_message(self, text: str, buttons: Optional[List] = None) -> bool:
+        """Отправка сообщения с кнопками"""
+        payload = {
+            'chat_id': self.chat_id,
+            'text': text,
+            'parse_mode': 'HTML'
+        }
+        
+        if buttons:
+            payload['reply_markup'] = json.dumps({'inline_keyboard': buttons})
+            
+        try:
+            response = requests.post(f"{self.base_url}/sendMessage", json=payload, timeout=10)
+            return response.status_code == 200
+        except Exception as e:
+            logger.error(f"Failed to send message: {e}")
+            return False
+    
+    def send_signal_alert(self, pair_data: Dict) -> bool:
+        """Отправка сигнала с кнопками действий"""
+        try:
+            pair_name = pair_data.get('pair_name', 'UNKNOWN')
+            signal = pair_data.get('signal', 'NO_SIGNAL')
+            z_score = pair_data.get('z_score')
+            adf_passed = pair_data.get('adf_passed', False)
+            price_a = pair_data.get('price_a')
+            price_b = pair_data.get('price_b')
+            
+            # Безопасное форматирование
+            z_display = self.safe_format_number(z_score, 2)
+            price_a_display = self.safe_format_number(price_a, 2)
+            price_b_display = self.safe_format_number(price_b, 2)
+            
+            # Форматируем сигнал
+            formatted_signal = signal
+            if "SHORT_" in signal and "LONG_" in signal:
+                parts = signal.split('_')
+                if len(parts) >= 4:
+                    formatted_signal = f"SHORT {parts[1]} / LONG {parts[3]}"
+            
+            message = (
+                f"🎯 <b>TRADING SIGNAL</b>\n"
+                f"Pair: <b>{pair_name}</b>\n"
+                f"Signal: <b>{formatted_signal}</b>\n"
+                f"Z-score: {z_display}\n"
+                f"ADF: {'✅ PASSED' if adf_passed else '❌ FAILED'}\n"
+                f"Prices: {price_a_display} | {price_b_display}"
+            )
+            
+            # Кнопки только для торговых сигналов
+            buttons = None
+            if signal not in ['HOLD', 'NO_DATA', 'EXIT_POSITION']:
+                buttons = [
+                    [
+                        {'text': '📈 OPEN', 'callback_data': f'OPEN:{signal}:{pair_name}'},
+                        {'text': '❌ CLOSE', 'callback_data': f'CLOSE:{signal}:{pair_name}'}
+                    ]
+                ]
+            elif signal == 'EXIT_POSITION':
+                buttons = [
+                    [{'text': '🔴 CLOSE POSITION', 'callback_data': f'CLOSE:{signal}:{pair_name}'}]
+                ]
+                
+            return self.send_message(message, buttons)
+            
+        except Exception as e:
+            logger.error(f"Error in send_signal_alert: {e}")
+            return self.send_message(f"❌ Error generating signal: {str(e)}")
+    
+    def send_status_report(self, report_data: Dict, open_positions: List = None) -> bool:
+        """Отправка статус отчета"""
+        try:
+            if not report_data:
+                return self.send_message("❌ No report data available")
+                
+            open_positions = open_positions or []
+            
+            # Безопасное извлечение данных
+            total_pairs = report_data.get('total_pairs', 0)
+            active_pairs = report_data.get('active_pairs', 0)
+            trading_signals = report_data.get('trading_signals', 0)
+            
+            message = (
+                f"📊 <b>PAIRS MONITORING STATUS</b>\n"
+                f"Total Pairs: {total_pairs}\n"
+                f"Active Pairs: {active_pairs}\n"
+                f"Trading Signals: {trading_signals}\n"
+                f"Open Positions: {len(open_positions)}"
+            )
+            
+            # Детали по открытым позициям
+            if open_positions:
+                message += "\n\n🎯 <b>OPEN POSITIONS:</b>\n"
+                for pos in open_positions[:5]:  # Ограничиваем для читаемости
+                    pair_name = pos.get('pair', 'N/A')
+                    signal = pos.get('signal', 'N/A')
+                    message += f"• {pair_name} - {signal}\n"
+            
+            # Кнопки управления
+            buttons = [
+                [
+                    {'text': '📈 Summary', 'callback_data': 'SUMMARY'},
+                    {'text': '🛑 Close All', 'callback_data': 'CLOSE_ALL'}
+                ],
+                [
+                    {'text': '🔄 Refresh', 'callback_data': 'REFRESH'}
+                ]
+            ]
+            
+            return self.send_message(message, buttons)
+            
+        except Exception as e:
+            logger.error(f"Error in send_status_report: {e}")
+            return self.send_message(f"❌ Error generating status report: {str(e)}")
+    
+    def handle_callback(self, callback_data: str, pair_analyzer, positions_manager) -> bool:
+        """Обработка callback от кнопок"""
+        try:
+            if callback_data == 'SUMMARY':
+                report = pair_analyzer.get_analysis_report()
+                return self.send_status_report(report, positions_manager.get_open_positions())
+                
+            elif callback_data == 'CLOSE_ALL':
+                closed_count = positions_manager.close_all_positions()
+                return self.send_message(f"✅ Closed {closed_count} positions")
+                
+            elif callback_data == 'REFRESH':
+                report = pair_analyzer.get_analysis_report()
+                return self.send_status_report(report, positions_manager.get_open_positions())
+                
+            elif callback_data.startswith(('OPEN:', 'CLOSE:')):
+                # Обработка торговых команд
+                try:
+                    action, signal, pair_name = callback_data.split(':', 2)
+                    if action == 'OPEN':
+                        success = positions_manager.open_position(signal, pair_name)
+                        msg = f"✅ Opened position: {pair_name}" if success else f"❌ Failed to open: {pair_name}"
+                    else:
+                        success = positions_manager.close_position(signal, pair_name)
+                        msg = f"✅ Closed position: {pair_name}" if success else f"❌ Failed to close: {pair_name}"
+                    return self.send_message(msg)
+                except ValueError:
+                    return self.send_message("❌ Invalid callback format")
+                
+            return self.send_message(f"❌ Unknown command: {callback_data}")
+            
+        except Exception as e:
+            logger.error(f"Error handling callback: {e}")
+            return self.send_message(f"❌ Error: {str(e)}")
+
+
+class SimplePositionsManager:
+    """Упрощенный менеджер позиций (без реального трейдинга)"""
+    def __init__(self):
+        self.open_positions = []
+        
+    def open_position(self, signal: str, pair_name: str) -> bool:
+        """Открытие позиции (демо)"""
+        try:
+            position = {
+                'pair': pair_name,
+                'signal': signal,
+                'size': 1000,
+                'entry_time': '2024-10-24'
+            }
+            self.open_positions.append(position)
+            logger.info(f"Opened position: {pair_name} - {signal}")
+            return True
+        except Exception as e:
+            logger.error(f"Error opening position: {e}")
+            return False
+        
+    def close_position(self, signal: str, pair_name: str) -> bool:
+        """Закрытие позиции (демо)"""
+        try:
+            initial_count = len(self.open_positions)
+            self.open_positions = [p for p in self.open_positions if p['pair'] != pair_name]
+            closed = initial_count - len(self.open_positions)
+            logger.info(f"Closed position: {pair_name} ({closed} positions)")
+            return closed > 0
+        except Exception as e:
+            logger.error(f"Error closing position: {e}")
+            return False
+        
+    def close_all_positions(self) -> int:
+        """Закрытие всех позиций"""
+        try:
+            count = len(self.open_positions)
+            self.open_positions.clear()
+            logger.info(f"Closed all {count} positions")
+            return count
+        except Exception as e:
+            logger.error(f"Error closing all positions: {e}")
+            return 0
+        
+    def get_open_positions(self) -> List:
+        """Получение открытых позиций"""
+        return self.open_positions.copy()
