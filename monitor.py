@@ -400,13 +400,15 @@ def main():
     args = parser.parse_args()
     
     if args.test:
-        from pairs_config import test_pair_combinations
+        from pairs_config import get_all_presets
         print("🔍 TESTING ALL PAIR PRESETS...")
-        results = test_pair_combinations()
+        results = get_all_presets()
         
-        for preset, data in results.items():
-            print(f"\n📊 {preset.upper()}:")
-            print(f"   Valid pairs: {data['valid']}/{data['total']}")
+        for preset_name, pairs in results.items():
+            print(f"\n📊 {preset_name.upper()}:")
+            print(f"   Valid pairs: {len(pairs)}")
+            if len(pairs) > 0:
+                print(f"   Sample: {pairs[0]['name']} - {pairs[0]['asset_a']} / {pairs[0]['asset_b']}")
         sys.exit(0)
     
     # Запуск монитора с выбранным пресетом
