@@ -69,9 +69,19 @@ class TelegramObserver(Observer):
                 asset_a = pair_data['asset_a'].split('/')[0]
                 asset_b = pair_data['asset_b'].split('/')[0]
                 
-                z_score = round(current_z, 2)
-                price_a = round(pair_data.get('price_a', 0), 2)
-                price_b = round(pair_data.get('price_b', 0), 2)
+                # 🆕 БЕЗОПАСНОЕ ФОРМАТИРОВАНИЕ Z-SCORE
+                try:
+                    z_score = round(float(current_z), 2) if current_z is not None else 0
+                except (ValueError, TypeError):
+                    z_score = current_z
+                
+                # 🆕 БЕЗОПАСНОЕ ФОРМАТИРОВАНИЕ ЦЕН
+                try:
+                    price_a = round(float(pair_data.get('price_a', 0)), 2) if pair_data.get('price_a') is not None else 0
+                    price_b = round(float(pair_data.get('price_b', 0)), 2) if pair_data.get('price_b') is not None else 0
+                except (ValueError, TypeError):
+                    price_a = pair_data.get('price_a', 0)
+                    price_b = pair_data.get('price_b', 0)
                 
                 formatted_signal = current_signal
                 if "SHORT_" in current_signal and "LONG_" in current_signal:
@@ -140,6 +150,16 @@ class TelegramObserver(Observer):
                 entry_z = pos['entry_z']
                 current_z = pos['current_z']
                 
+                # 🆕 БЕЗОПАСНОЕ ФОРМАТИРОВАНИЕ Z-SCORE
+                try:
+                    entry_z_formatted = f"{float(entry_z):.2f}" if entry_z is not None else "N/A"
+                    current_z_formatted = f"{float(current_z):.2f}" if current_z is not None else "N/A"
+                    z_change = float(current_z) - float(entry_z) if current_z is not None and entry_z is not None else 0
+                except (ValueError, TypeError):
+                    entry_z_formatted = str(entry_z)
+                    current_z_formatted = str(current_z)
+                    z_change = 0
+                
                 if current_z is not None:
                     if abs(current_z) < abs(entry_z):
                         trend = "📉 к выходу"
@@ -147,7 +167,6 @@ class TelegramObserver(Observer):
                     else:
                         trend = "📈 от выхода" 
                         trend_arrow = "🔴"
-                    z_change = current_z - entry_z
                 else:
                     trend = "📊 нет данных"
                     trend_arrow = "⚪"
@@ -156,8 +175,8 @@ class TelegramObserver(Observer):
                 positions_msg += (
                     f"{trend_arrow} <b>{pos['pair']}</b>\n"
                     f"   Signal: {pos['signal']}\n"
-                    f"   Entry Z: {entry_z:.2f}\n"
-                    f"   Current Z: {current_z:.2f if current_z is not None else 'N/A'}\n"
+                    f"   Entry Z: {entry_z_formatted}\n"
+                    f"   Current Z: {current_z_formatted}\n"
                     f"   Change: {z_change:+.2f} {trend}\n"
                     f"   PnL: ${pos['floating_pnl']:+.2f}\n"
                     f"   Size: ${pos['size']:.2f}\n"
