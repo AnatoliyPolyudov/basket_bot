@@ -205,6 +205,37 @@ def refresh_presets():
     return PAIR_PRESETS
 
 if __name__ == "__main__":
+    def test_pair_combinations():
+    """Тестирует все пресеты пар и возвращает результаты"""
+    print("🔍 TESTING ALL PAIR PRESETS...")
+    results = {}
+    
+    all_presets = get_all_presets()
+    
+    for preset_name, pairs in all_presets.items():
+        valid_pairs = 0
+        total_pairs = len(pairs)
+        
+        # Проверяем каждую пару на валидность
+        for pair in pairs:
+            if (pair.get('asset_a') and 
+                pair.get('asset_b') and 
+                pair.get('name')):
+                valid_pairs += 1
+        
+        results[preset_name] = {
+            'valid': valid_pairs,
+            'total': total_pairs,
+            'pairs': pairs
+        }
+        
+        print(f"📊 {preset_name.upper()}:")
+        print(f"   Valid pairs: {valid_pairs}/{total_pairs}")
+        if valid_pairs > 0:
+            print(f"   Sample: {pairs[0]['name']} - {pairs[0]['asset_a']} / {pairs[0]['asset_b']}")
+    
+    return results
+    
     print("🔍 TESTING AUTO TOP-30 PRESETS...")
     presets = get_all_presets()
     
