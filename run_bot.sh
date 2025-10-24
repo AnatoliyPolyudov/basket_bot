@@ -471,13 +471,19 @@ except Exception as e:
         ;;
     
     deploy)
-        print_info "FULL DEPLOY - UPDATE CODE & RESTART"
+        print_info "FULL DEPLOY - UPDATE CODE & RESTART IN SCREEN"
         cd "$BOT_DIR"
         ./run_bot.sh git-pull
         sleep 2
         ./run_bot.sh refresh-pairs
         sleep 2
-        ./run_bot.sh quick-restart
+        
+        # Останавливаем старый бот и запускаем в screen
+        ./run_bot.sh stop
+        sleep 3
+        ./run_bot.sh start ultra_liquid_8
+        
+        print_status "Deploy completed - bot running in screen"
         ;;
     
     full-update)
@@ -561,7 +567,7 @@ except Exception as e:
         echo "  $0 test-preset <name>   - Test specific preset"
         echo ""
         echo -e "${YELLOW}🚀 DEPLOY COMMANDS:${NC}"
-        echo "  $0 deploy               - Full deploy: update & restart"
+        echo "  $0 deploy               - Full deploy: update & restart IN SCREEN"
         echo ""
         echo -e "${GREEN}📋 AVAILABLE PRESETS:${NC}"
         echo "  ultra_liquid_8, liquid_pairs_15, auto_top_30, auto_top_20"
@@ -578,6 +584,6 @@ except Exception as e:
         echo "  ./run_bot.sh attach                  # 📺 View bot in screen"
         echo "  ./run_bot.sh stop                    # 🛑 GUARANTEED stop"
         echo "  ./run_bot.sh status                  # 📊 Check status"
-        echo "  ./run_bot.sh deploy                  # 🔄 Full update & restart"
+        echo "  ./run_bot.sh deploy                  # 🔄 Full update & restart IN SCREEN"
         ;;
 esac
