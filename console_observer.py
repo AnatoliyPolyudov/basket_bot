@@ -21,8 +21,40 @@ class ConsoleObserver(Observer):
             
             print(f"Pair: {pair_name}")
             print(f"  Signal: {signal}")
-            print(f"  Z-score: {z_score:.4f}")
-            print(f"  Spread: {spread:.6f}")
+            
+            # 🆕 БЕЗОПАСНОЕ ФОРМАТИРОВАНИЕ Z-SCORE
+            if z_score is None:
+                print(f"  Z-score: N/A")
+            else:
+                try:
+                    z_float = float(z_score)
+                    print(f"  Z-score: {z_float:.4f}")
+                except (ValueError, TypeError):
+                    print(f"  Z-score: {z_score}")
+            
+            # 🆕 БЕЗОПАСНОЕ ФОРМАТИРОВАНИЕ SPREAD
+            if spread is None:
+                print(f"  Spread: N/A")
+            else:
+                try:
+                    spread_float = float(spread)
+                    print(f"  Spread: {spread_float:.6f}")
+                except (ValueError, TypeError):
+                    print(f"  Spread: {spread}")
+            
             print(f"  ADF: {'PASSED' if adf_passed else 'FAILED'}")
-            print(f"  Prices: {pair_data.get('asset_a', '')}={pair_data.get('price_a', 0):.2f} | {pair_data.get('asset_b', '')}={pair_data.get('price_b', 0):.2f}")
+            
+            # 🆕 БЕЗОПАСНОЕ ФОРМАТИРОВАНИЕ ЦЕН
+            price_a = pair_data.get('price_a', 0)
+            price_b = pair_data.get('price_b', 0)
+            asset_a = pair_data.get('asset_a', '')
+            asset_b = pair_data.get('asset_b', '')
+            
+            try:
+                price_a_float = float(price_a) if price_a is not None else 0
+                price_b_float = float(price_b) if price_b is not None else 0
+                print(f"  Prices: {asset_a}={price_a_float:.2f} | {asset_b}={price_b_float:.2f}")
+            except (ValueError, TypeError):
+                print(f"  Prices: {asset_a}={price_a} | {asset_b}={price_b}")
+            
             print("-" * 30)
