@@ -27,24 +27,19 @@ class TelegramObserver(Observer):
             payload['reply_markup'] = json.dumps({'inline_keyboard': buttons})
         try:
             requests.post(url, data=payload, timeout=10)
-            print("Telegram message sent")
         except Exception as e:
             print("Telegram send failed:", e)
 
     def update(self, data):
         pairs_data = data.get('pairs_data', [])
         
-        # 🆕 ОТПРАВЛЯЕМ СТАТУС ПОЗИЦИЙ КАЖДЫЕ 10 МИНУТ
         current_time = datetime.now()
         if (not self.last_status_message or 
             (current_time - self.last_status_message).total_seconds() > 600):
             
-            status_msg = self.generate_positions_status()
-            if status_msg:
-                self.send_message(status_msg)
-                self.last_status_message = current_time
+            self.send_detailed_status(self.trader, data)
+            self.last_status_message = current_time
         
-        # Обработка торговых сигналов (существующий код)
         messages_to_send = []
         
         for pair_data in pairs_data:
@@ -75,7 +70,6 @@ class TelegramObserver(Observer):
                 asset_b = pair_data['asset_b'].split('/')[0]
                 
                 z_score = round(current_z, 2)
-                spread = round(pair_data.get('spread', 0), 3)
                 price_a = round(pair_data.get('price_a', 0), 2)
                 price_b = round(pair_data.get('price_b', 0), 2)
                 
@@ -86,13 +80,11 @@ class TelegramObserver(Observer):
                         formatted_signal = f"SHORT {parts[1]} / LONG {parts[3]}"
                 
                 msg = (
-                    f"🎯 <b>PAIR TRADING ALERT - {pair_name}</b>\n"
+                    f"🎯 <b>TRADING SIGNAL - {pair_name}</b>\n"
                     f"Signal: <b>{formatted_signal}</b>\n"
                     f"Z-score: {z_score}\n"
-                    f"Spread: {spread}\n"
                     f"ADF Test: {'✅ PASSED' if adf_passed else '❌ FAILED'}\n"
-                    f"Prices: {asset_a}={price_a} | {asset_b}={price_b}\n"
-                    f"Pair: {asset_a} / {asset_b}"
+                    f"Prices: {asset_a}={price_a} | {asset_b}={price_b}"
                 )
                 
                 messages_to_send.append({
@@ -112,54 +104,75 @@ class TelegramObserver(Observer):
             if signal and signal not in ["HOLD", "NO DATA", "NO TRADE - NOT STATIONARY", "EXIT_POSITION"]:
                 buttons = [
                     [
-                        {'text': 'OPEN', 'callback_data': f'OPEN:{signal}:{pair_name}'},
-                        {'text': 'CLOSE', 'callback_data': f'CLOSE:{signal}:{pair_name}'}
+                        {'text': '📈 OPEN', 'callback_data': f'OPEN:{signal}:{pair_name}'},
+                        {'text': '📉 CLOSE', 'callback_data': f'CLOSE:{signal}:{pair_name}'}
                     ]
                 ]
             elif signal == "EXIT_POSITION":
                 buttons = [
                     [
-                        {'text': 'CLOSE POSITION', 'callback_data': f'CLOSE:{signal}:{pair_name}'}
+                        {'text': '🔴 CLOSE POSITION', 'callback_data': f'CLOSE:{signal}:{pair_name}'}
                     ]
                 ]
             
             self.send_message(msg_data['message'], buttons)
 
-    # 🆕 МЕТОД ДЛЯ СТАТУСА ПОЗИЦИЙ
-    def generate_positions_status(self):
-        """Генерирует статус открытых позиций"""
-        if not self.trader:
-            return None
-            
-        open_positions = self.trader.get_open_positions()
-        if not open_positions:
-            return None
-            
-        summary = self.trader.get_trading_summary()
+    def send_detailed_status(self, trader, data=None):
+        """Детальный статус с текущими Z-score"""
+        summary = trader.get_trading_summary(data)
         
-        msg = (
-            f"📊 <b>PAPER TRADING STATUS</b>\n"
-            f"Balance: ${summary['current_balance']:.2f}\n"
+        main_msg = (
+            f"📈 <b>TRADING SUMMARY</b>\n"
+            f"Initial: ${summary['initial_balance']:.2f}\n"
             f"Equity: ${summary['total_equity']:.2f}\n"
+            f"Closed PnL: ${summary['total_pnl']:.2f}\n"
             f"Floating PnL: ${summary['floating_pnl']:.2f}\n"
-            f"Open Positions: {summary['open_positions']}\n"
+            f"Trades: {summary['total_trades']}\n"
+            f"Open: {summary['open_positions']}\n"
             f"Win Rate: {summary['win_rate']:.1f}%\n"
-            f"Max Drawdown: {summary['max_drawdown']:.1f}%\n"
-            f"────────────────────\n"
+            f"Drawdown: {summary['max_drawdown']:.1f}%\n"
         )
         
-        for pair_name, position in open_positions.items():
-            duration = (datetime.now() - position['entry_time']).total_seconds() / 60
-            msg += (
-                f"🎯 <b>{pair_name}</b>\n"
-                f"Signal: {position['signal']}\n"
-                f"Size: ${position['size']:.2f}\n"
-                f"PnL: ${position['floating_pnl']:.2f}\n"
-                f"Entry Z: {position['entry_z']:.2f}\n"
-                f"Duration: {duration:.1f} min\n"
-                f"Type: {position['type']}\n"
-                f"────────────────────\n"
-            )
+        positions_msg = ""
+        if 'open_positions_details' in summary and summary['open_positions_details']:
+            positions_msg = "\n\n🎯 <b>OPEN POSITIONS:</b>\n"
+            for pos in summary['open_positions_details']:
+                entry_z = pos['entry_z']
+                current_z = pos['current_z']
+                
+                if current_z is not None:
+                    if abs(current_z) < abs(entry_z):
+                        trend = "📉 к выходу"
+                        trend_arrow = "🟢"
+                    else:
+                        trend = "📈 от выхода" 
+                        trend_arrow = "🔴"
+                    z_change = current_z - entry_z
+                else:
+                    trend = "📊 нет данных"
+                    trend_arrow = "⚪"
+                    z_change = 0
+                
+                positions_msg += (
+                    f"{trend_arrow} <b>{pos['pair']}</b>\n"
+                    f"   Signal: {pos['signal']}\n"
+                    f"   Entry Z: {entry_z:.2f}\n"
+                    f"   Current Z: {current_z:.2f if current_z is not None else 'N/A'}\n"
+                    f"   Change: {z_change:+.2f} {trend}\n"
+                    f"   PnL: ${pos['floating_pnl']:+.2f}\n"
+                    f"   Size: ${pos['size']:.2f}\n"
+                    f"   Duration: {pos['duration_minutes']} min\n"
+                    f"   ───────────────────\n"
+                )
+        else:
+            positions_msg = "\n\n📋 <b>No open positions</b>"
+        
+        legend_msg = (
+            "\n\n📊 <b>LEGEND:</b>\n"
+            "🟢 Z-score → 0 (хорошо)\n"
+            "🔴 Z-score ← 0 (плохо)\n"
+            "🎯 Вход: |Z| > 1.0, Выход: |Z| < 0.5"
+        )
         
         buttons = [
             [
@@ -173,63 +186,23 @@ class TelegramObserver(Observer):
             ]
         ]
         
-        self.send_message(msg, buttons)
-        return msg
+        full_msg = main_msg + positions_msg + legend_msg
+        self.send_message(full_msg, buttons)
 
-    # 🆕 ОБРАБОТКА CALLBACK ДЛЯ УПРАВЛЕНИЯ
-    def handle_management_callback(self, callback_data, trader):
-        """Обработка callback для управления торговлей"""
+    def handle_management_callback(self, callback_data, trader, current_data=None):
         if callback_data == 'SUMMARY':
-            summary = trader.get_trading_summary()
-            msg = (
-                f"📈 <b>TRADING SUMMARY</b>\n"
-                f"Initial Balance: ${summary['initial_balance']:.2f}\n"
-                f"Current Equity: ${summary['total_equity']:.2f}\n"
-                f"Total PnL: ${summary['total_pnl']:.2f}\n"
-                f"Floating PnL: ${summary['floating_pnl']:.2f}\n"
-                f"Total Trades: {summary['total_trades']}\n"
-                f"Open Positions: {summary['open_positions']}\n"
-                f"Win Rate: {summary['win_rate']:.1f}%\n"
-                f"Max Drawdown: {summary['max_drawdown']:.1f}%\n"
-                f"Best Trade: ${summary['best_trade']:.2f}\n"
-                f"Worst Trade: ${summary['worst_trade']:.2f}\n"
-                f"Avg Duration: {summary['avg_duration']:.1f} min"
-            )
-            self.send_message(msg)
-            
+            self.send_detailed_status(trader, current_data)
         elif callback_data == 'CLOSE_ALL':
             closed_count = trader.close_all_positions()
             self.send_message(f"✅ Closed {closed_count} positions")
-            
         elif callback_data == 'ENABLE_AUTO':
             trader.enable_trading()
             self.send_message("✅ Auto trading ENABLED")
-            
         elif callback_data == 'DISABLE_AUTO':
             trader.disable_trading()
             self.send_message("🚫 Auto trading DISABLED")
-            
         elif callback_data == 'EXPORT_LOG':
             if trader.export_trading_log():
-                self.send_message("✅ Trading log exported successfully")
+                self.send_message("✅ Trading log exported")
             else:
-                self.send_message("❌ Failed to export trading log")
-
-    def send_status_summary(self, pairs_data):
-        """Отправка общего статуса всех пар"""
-        active_count = sum(1 for p in pairs_data if p.get('adf_passed', False))
-        trading_signals = [p for p in pairs_data if p.get('signal') not in ["HOLD", "NO DATA", "NO TRADE - NOT STATIONARY"]]
-        
-        msg = (
-            f"📈 <b>PAIRS STATUS SUMMARY</b>\n"
-            f"Active Pairs: {active_count}/{len(pairs_data)}\n"
-            f"Trading Signals: {len(trading_signals)}\n"
-        )
-        
-        for pair in pairs_data:
-            if pair.get('adf_passed', False):
-                signal = pair.get('signal', 'HOLD')
-                z_score = round(pair.get('z', 0), 2)
-                msg += f"\n{pair['pair_name']}: {signal} (Z={z_score})"
-        
-        self.send_message(msg)
+                self.send_message("❌ Failed to export log")
