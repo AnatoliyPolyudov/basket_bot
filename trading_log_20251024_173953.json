@@ -1,0 +1,119 @@
+{
+  "export_time": "2025-10-24T17:39:53.214222",
+  "summary": {
+    "initial_balance": 10000,
+    "current_balance": 9500.0,
+    "total_equity": 9500.638606795197,
+    "total_pnl": 0,
+    "floating_pnl": 0.6386067951974383,
+    "total_trades": 0,
+    "open_positions": 2,
+    "open_positions_details": [
+      {
+        "pair": "BNB_SOL",
+        "signal": "LONG_BNB_SHORT_SOL",
+        "size": 250.0,
+        "entry_z": -1.3100773844336842,
+        "current_z": -1.287671425803122,
+        "floating_pnl": 0.28007448288202563,
+        "duration_minutes": 43.0,
+        "type": "AUTO"
+      },
+      {
+        "pair": "BTC_ADA",
+        "signal": "LONG_BTC_SHORT_ADA",
+        "size": 250.0,
+        "entry_z": -1.9520005480591818,
+        "current_z": -1.9233179630739488,
+        "floating_pnl": 0.3585323123154127,
+        "duration_minutes": 43.0,
+        "type": "AUTO"
+      }
+    ],
+    "win_rate": 0,
+    "max_drawdown": 5.0,
+    "current_drawdown": 4.993613932048029,
+    "best_trade": 0,
+    "worst_trade": 0,
+    "avg_duration": 0,
+    "current_positions": [
+      "BNB_SOL",
+      "BTC_ADA"
+    ]
+  },
+  "performance_stats": {
+    "total_trades": 0,
+    "winning_trades": 0,
+    "losing_trades": 0,
+    "total_pnl": 0,
+    "max_drawdown": 5.0,
+    "current_drawdown": 4.993613932048029,
+    "best_trade": 0,
+    "worst_trade": 0,
+    "avg_trade_duration": 0
+  },
+  "position_history": [
+    {
+      "action": "OPEN",
+      "pair_name": "BNB_SOL",
+      "signal": "LONG_BNB_SHORT_SOL",
+      "size": 250.0,
+      "entry_time": "2025-10-24 16:56:52.913610",
+      "entry_z": -1.3100773844336842,
+      "type": "AUTO",
+      "timestamp": "2025-10-24T16:56:52.913620"
+    },
+    {
+      "action": "OPEN",
+      "pair_name": "BTC_ADA",
+      "signal": "LONG_BTC_SHORT_ADA",
+      "size": 250.0,
+      "entry_time": "2025-10-24 16:56:52.913654",
+      "entry_z": -1.9520005480591818,
+      "type": "AUTO",
+      "timestamp": "2025-10-24T16:56:52.913659"
+    }
+  ],
+  "current_positions": {
+    "BNB_SOL": {
+      "signal": "LONG_BNB_SHORT_SOL",
+      "size": 250.0,
+      "pair_name": "BNB_SOL",
+      "entry_time": "2025-10-24 16:56:52.913610",
+      "entry_z": -1.3100773844336842,
+      "entry_prices": {
+        "BNB/USDT:USDT": 1119.6,
+        "SOL/USDT:USDT": 191.99
+      },
+      "current_prices": {
+        "BNB/USDT:USDT": 1107.2,
+        "SOL/USDT:USDT": 190.29
+      },
+      "floating_pnl": 0.28007448288202563,
+      "status": "OPEN",
+      "type": "AUTO",
+      "max_floating_pnl": 0.4087686243202465,
+      "min_floating_pnl": 0
+    },
+    "BTC_ADA": {
+      "signal": "LONG_BTC_SHORT_ADA",
+      "size": 250.0,
+      "pair_name": "BTC_ADA",
+      "entry_time": "2025-10-24 16:56:52.913654",
+      "entry_z": -1.9520005480591818,
+      "entry_prices": {
+        "BTC/USDT:USDT": 110878.0,
+        "ADA/USDT:USDT": 0.6528
+      },
+      "current_prices": {
+        "BTC/USDT:USDT": 109969.6,
+        "ADA/USDT:USDT": 0.6456
+      },
+      "floating_pnl": 0.3585323123154127,
+      "status": "OPEN",
+      "type": "AUTO",
+      "max_floating_pnl": 0.5294847395806629,
+      "min_floating_pnl": 0
+    }
+  }
+}
