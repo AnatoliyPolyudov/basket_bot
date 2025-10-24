@@ -66,6 +66,9 @@ class RStylePairMonitor(Subject):
                 'data_loaded': False
             }
         
+        # 🆕 ДЛЯ ПЕРЕДАЧИ ДАННЫХ В TELEGRAM
+        self.current_report_data = None
+        
     def complete_data_reset(self):
         """ПОЛНЫЙ СБРОС всех данных и перезагрузка"""
         logger.info("🗑️ COMPLETE DATA RESET INITIATED...")
@@ -358,6 +361,10 @@ class RStylePairMonitor(Subject):
                     "active_pairs": active_pairs_count,
                     "trading_signals": trading_signals_count
                 }
+                
+                # 🆕 СОХРАНЯЕМ ТЕКУЩИЕ ДАННЫЕ ДЛЯ TELEGRAM
+                self.current_report_data = report_data
+                
                 self.notify(report_data)
                 
                 time.sleep(interval_minutes * 60)
@@ -370,9 +377,9 @@ class RStylePairMonitor(Subject):
                 time.sleep(60)
 
 
-def telegram_polling(trader, telegram_observer):
+def telegram_polling(trader, telegram_observer, monitor_instance):
     """
-    Обновленная функция polling с поддержкой управления
+    Обновленная функция polling с передачей текущих данных монитора
     """
     TELEGRAM_BOT_TOKEN = "8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng"
     offset = None
@@ -386,8 +393,13 @@ def telegram_polling(trader, telegram_observer):
             for update in updates:
                 if "callback_query" in update:
                     data = update["callback_query"]["data"]
-                    # 🆕 ПЕРЕДАЕМ telegram_observer В handle_callback
-                    handle_callback(data, trader, telegram_observer)
+                    
+                    # 🆕 ПЕРЕДАЕМ ТЕКУЩИЕ ДАННЫЕ МОНИТОРА
+                    current_data = None
+                    if monitor_instance and hasattr(monitor_instance, 'current_report_data'):
+                        current_data = monitor_instance.current_report_data
+                    
+                    handle_callback(data, trader, telegram_observer, current_data)
                 offset = update["update_id"] + 1
             time.sleep(1)
         except Exception as e:
@@ -429,8 +441,12 @@ def main():
     telegram_observer = TelegramObserver(trader=trader)
     monitor.attach(telegram_observer)
 
-    # 🆕 ОБНОВЛЕННЫЙ ВЫЗОВ С telegram_observer
-    polling_thread = threading.Thread(target=telegram_polling, args=(trader, telegram_observer), daemon=True)
+    # 🆕 ОБНОВЛЕННЫЙ ВЫЗОВ С ПЕРЕДАЧЕЙ МОНИТОРА
+    polling_thread = threading.Thread(
+        target=telegram_polling, 
+        args=(trader, telegram_observer, monitor),  # 🆕 ПЕРЕДАЕМ МОНИТОР
+        daemon=True
+    )
     polling_thread.start()
 
     monitor.run(interval_minutes=1)
