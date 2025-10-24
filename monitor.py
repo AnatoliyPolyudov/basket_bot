@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 class RStylePairMonitor(Subject):
-    def __init__(self, pair_preset="auto_top_30"):
+    def __init__(self, pair_preset="ultra_liquid_8"):
         super().__init__()
         self.exchange = ccxt.okx({
             "enableRateLimit": True,
@@ -35,7 +35,7 @@ class RStylePairMonitor(Subject):
         self.trading_pairs = get_preset(pair_preset)
         if not self.trading_pairs:
             logger.error(f"❌ Preset '{pair_preset}' not found! Using default.")
-            self.trading_pairs = get_preset("auto_top_30")
+            self.trading_pairs = get_preset("ultra_liquid_8")
         
         logger.info(f"🎯 Loaded {len(self.trading_pairs)} pairs from preset: {pair_preset}")
         
@@ -47,14 +47,14 @@ class RStylePairMonitor(Subject):
         self.all_symbols = list(self.all_symbols)
         
         self.historical_data = {}
-        self.timeframe = "15m"
-        self.lookback_bars = 672
+        self.timeframe = "1h"  # Упростили timeframe для быстрой загрузки
+        self.lookback_bars = 100  # Уменьшили с 672 до 100
         self.data_loaded = False
-        self.window_bars = 35
+        self.window_bars = 20  # Уменьшили окно для Z-score
         
-        # ADF настройки
-        self.adf_lookbacks = [60, 40, 20]
-        self.adf_critical_value = -2.58
+        # ADF настройки (упрощенные)
+        self.adf_lookbacks = [30, 20]  # Меньше баров для теста
+        self.adf_critical_value = -1.5  # Более мягкий критерий
         
         # Храним состояние для каждой пары
         self.pair_states = {}
@@ -108,22 +108,25 @@ class RStylePairMonitor(Subject):
         success_count = 0
         for symbol in self.all_symbols:
             try:
+                logger.info(f"📥 Loading {symbol}...")
                 ohlcv = self.exchange.fetch_ohlcv(symbol, self.timeframe, limit=self.lookback_bars)
-                if ohlcv and len(ohlcv) >= 100:
+                if ohlcv and len(ohlcv) >= 50:  # Уменьшили минимальное требование
                     self.historical_data[symbol] = [c[4] for c in ohlcv]
                     success_count += 1
                     logger.info(f"✅ {symbol}: {len(self.historical_data[symbol])} bars")
                 else:
-                    logger.warning(f"❌ No data for {symbol}")
+                    logger.warning(f"❌ No data for {symbol} - got {len(ohlcv) if ohlcv else 0} bars")
             except Exception as e:
                 logger.warning(f"❌ Error loading {symbol}: {e}")
         
-        if success_count >= 10:  # Минимум 10 символов для работы
+        # Требуем загрузки хотя бы 60% символов
+        min_required = max(3, len(self.all_symbols) * 0.6)
+        if success_count >= min_required:
             self.data_loaded = True
             logger.info(f"🎯 Successfully loaded {success_count}/{len(self.all_symbols)} symbols")
             return True
         else:
-            logger.error(f"❌ Not enough valid symbols: {success_count}/{len(self.all_symbols)}")
+            logger.error(f"❌ Not enough valid symbols: {success_count}/{len(self.all_symbols)} (need at least {min_required})")
             return False
 
     def get_pair_historical_spread(self, pair):
@@ -393,8 +396,8 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='R-Style Pair Trading Monitor')
-    parser.add_argument('--preset', type=str, default='auto_top_30', 
-                       help='Pair preset: auto_top_30, auto_top_20, auto_top_15, auto_btc_focused, top_10_btc_pairs')
+    parser.add_argument('--preset', type=str, default='ultra_liquid_8', 
+                       help='Pair preset: ultra_liquid_8, liquid_pairs_15, top_10_btc_pairs, auto_top_30')
     parser.add_argument('--test', action='store_true', help='Test pair configurations')
     
     args = parser.parse_args()
