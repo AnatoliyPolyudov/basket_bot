@@ -39,41 +39,94 @@ activate_venv() {
     fi
 }
 
+# Проверка установлен ли screen
+check_screen() {
+    if ! command -v screen &> /dev/null; then
+        print_warning "Screen not found. Installing..."
+        sudo apt update && sudo apt install -y screen
+        if [ $? -eq 0 ]; then
+            print_status "Screen installed successfully"
+        else
+            print_error "Failed to install screen"
+            exit 1
+        fi
+    fi
+}
+
+# Запуск в screen
+start_in_screen() {
+    local preset="$1"
+    local session_name="basket_bot_${preset}"
+    
+    check_screen
+    
+    # Проверяем не запущен ли уже бот
+    if screen -list | grep -q "basket_bot"; then
+        print_warning "Bot is already running in screen. Use '$0 attach' to attach to session."
+        return 1
+    fi
+    
+    print_info "Starting bot in screen session: $session_name"
+    
+    # Создаем screen сессию и запускаем бота
+    screen -dmS "$session_name" bash -c "
+        cd '$BOT_DIR'
+        source venv/bin/activate
+        python monitor.py --preset '$preset'
+        echo 'Bot stopped. Press Enter to close...'
+        read
+    "
+    
+    if [ $? -eq 0 ]; then
+        print_status "Bot started successfully in screen session: $session_name"
+        echo "📋 Screen commands:"
+        echo "   screen -r $session_name    - Attach to session"
+        echo "   screen -ls                 - List all sessions" 
+        echo "   Ctrl+A, then D             - Detach from session"
+    else
+        print_error "Failed to start bot in screen"
+        return 1
+    fi
+}
+
 case "$1" in
     start|start-auto)
-        PRESET="${2:-auto_top_30}"
+        PRESET="${2:-ultra_liquid_8}"
         echo -e "${GREEN}🚀 STARTING BOT WITH PRESET: $PRESET${NC}"
         
-        # Переходим в директорию и активируем venv
+        start_in_screen "$PRESET"
+        ;;
+    
+    start-direct)
+        PRESET="${2:-ultra_liquid_8}"
+        print_info "STARTING BOT DIRECTLY (without screen): $PRESET"
+        
         cd "$BOT_DIR"
         activate_venv
         
-        # Проверяем есть ли Python и зависимости
         if ! command -v python &> /dev/null; then
             print_error "Python not found!"
             exit 1
         fi
         
-        # Проверяем есть ли файлы
         if [ ! -f "monitor.py" ]; then
             print_error "monitor.py not found!"
             exit 1
         fi
         
-        # Запускаем бота
         python monitor.py --preset "$PRESET"
         ;;
     
     start-default)
-        print_info "STARTING BOT WITH DEFAULT PRESET"
-        cd "$BOT_DIR"
-        activate_venv
-        python monitor.py
+        print_info "STARTING BOT WITH DEFAULT PRESET IN SCREEN"
+        start_in_screen "ultra_liquid_8"
         ;;
     
     stop)
         print_warning "STOPPING BOT..."
         cd "$BOT_DIR"
+        
+        # Останавливаем процессы Python
         if pgrep -f "python monitor.py" > /dev/null; then
             pkill -f "python monitor.py"
             sleep 2
@@ -81,32 +134,55 @@ case "$1" in
                 print_error "Failed to stop bot gracefully, forcing..."
                 pkill -9 -f "python monitor.py"
             fi
-            print_status "Bot stopped"
-        else
-            print_warning "Bot is not running"
         fi
+        
+        # Завершаем screen сессии
+        if screen -list | grep -q "basket_bot"; then
+            screen -ls | grep "basket_bot" | cut -d. -f1 | awk '{print $1}' | xargs -I {} screen -XS {} quit
+            print_status "Screen sessions terminated"
+        fi
+        
+        print_status "Bot stopped"
         ;;
     
     restart|reload)
-        PRESET="${2:-auto_top_30}"
+        PRESET="${2:-ultra_liquid_8}"
         print_info "RESTARTING BOT WITH PRESET: $PRESET"
         
-        cd "$BOT_DIR"
-        activate_venv
+        ./run_bot.sh stop
+        sleep 3
+        ./run_bot.sh start "$PRESET"
+        ;;
+    
+    attach)
+        SESSION_NAME="${2:-basket_bot}"
+        print_info "ATTACHING TO SCREEN SESSION: $SESSION_NAME"
         
-        # Останавливаем бота
-        if pgrep -f "python monitor.py" > /dev/null; then
-            pkill -f "python monitor.py"
-            sleep 3
+        if screen -list | grep -q "$SESSION_NAME"; then
+            screen -r "$SESSION_NAME"
+        else
+            print_error "Screen session '$SESSION_NAME' not found"
+            echo "Available sessions:"
+            screen -ls | grep "basket_bot"
         fi
-        
-        # Запускаем заново
-        python monitor.py --preset "$PRESET"
+        ;;
+    
+    detach)
+        print_info "DETACHING FROM SCREEN SESSION"
+        # Внутри screen: Ctrl+A, затем D
+        echo "To detach from screen session, press: Ctrl+A, then D"
+        ;;
+    
+    screens|list-screens)
+        print_info "ACTIVE SCREEN SESSIONS:"
+        screen -ls | grep "basket_bot" || echo "No active basket_bot sessions"
         ;;
     
     status)
         print_info "BOT STATUS:"
         cd "$BOT_DIR"
+        
+        # Проверяем процессы
         if pgrep -f "python monitor.py" > /dev/null; then
             print_status "Bot is RUNNING"
             echo "Active processes:"
@@ -114,13 +190,25 @@ case "$1" in
                 echo "   📝 $line"
             done
             
-            # Пытаемся получить информацию о пресете
+            # Информация о пресете
             PRESET_INFO=$(ps aux | grep "python monitor.py" | grep -o "preset [a-zA-Z0-9_]*" | head -1)
             if [ ! -z "$PRESET_INFO" ]; then
                 echo "   🎯 Using: $PRESET_INFO"
             fi
         else
-            print_error "Bot is STOPPED"
+            print_error "Bot process is STOPPED"
+        fi
+        
+        # Проверяем screen сессии
+        echo ""
+        print_info "SCREEN SESSIONS:"
+        if screen -list | grep -q "basket_bot"; then
+            print_status "Active screen sessions found:"
+            screen -ls | grep "basket_bot"
+            echo ""
+            echo "💡 Use '$0 attach' to connect to a session"
+        else
+            print_warning "No active screen sessions"
         fi
         ;;
     
@@ -172,7 +260,7 @@ try:
     presets = get_all_presets()
     for preset_name, pairs in presets.items():
         print(f'\n🎯 {preset_name.upper()} ({len(pairs)} pairs):')
-        for i, pair in enumerate(pairs[:10], 1):  # Показываем первые 10
+        for i, pair in enumerate(pairs[:10], 1):
             print(f'   {i:2d}. {pair[\"name\"]}: {pair[\"asset_a\"]} / {pair[\"asset_b\"]}')
         if len(pairs) > 10:
             print(f'   ... and {len(pairs) - 10} more pairs')
@@ -304,7 +392,6 @@ try:
     }
     
     if '$PRESET' in all_presets:
-        # Проверяем нет ли уже такой пары
         for pair in all_presets['$PRESET']:
             if pair['name'] == '$PAIR_NAME':
                 print('❌ Pair already exists!')
@@ -328,11 +415,16 @@ except Exception as e:
         print_info "VIEWING BOT LOGS:"
         cd "$BOT_DIR"
         if pgrep -f "python monitor.py" > /dev/null; then
+            # Пытаемся найти screen сессию для просмотра логов
+            if screen -list | grep -q "basket_bot"; then
+                print_info "Bot is running in screen. Use '$0 attach' to view real-time logs"
+            fi
+            
             if [ -f "nohup.out" ]; then
                 tail -f nohup.out
             else
-                print_warning "No log file found. Bot might be running in foreground."
-                echo "Current output:"
+                print_warning "No log file found."
+                echo "Current processes:"
                 ps aux | grep "python monitor.py" | grep -v grep
             fi
         else
@@ -362,7 +454,6 @@ except Exception as e:
         print_info "FULL UPDATE - PULL → SNAPSHOT → PUSH"
         cd "$BOT_DIR"
         
-        # 1. Скачать изменения из удаленного репозитория
         print_info "Step 1: Pulling changes from remote..."
         git pull origin main
         if [ $? -eq 0 ]; then
@@ -372,7 +463,6 @@ except Exception as e:
             exit 1
         fi
         
-        # 2. Создать снапшот текущего состояния
         print_info "Step 2: Creating code snapshot..."
         rm -f snap
         for f in *.py; do
@@ -383,7 +473,6 @@ except Exception as e:
         done
         print_status "Snapshot created: snap"
         
-        # 3. Отправить изменения на удаленный репозиторий
         print_info "Step 3: Pushing changes to remote..."
         git add .
         git commit -m "Update: $(date '+%Y-%m-%d %H:%M:%S')" || true
@@ -401,51 +490,64 @@ except Exception as e:
         echo -e "${GREEN}🎯 BASKET BOT MANAGEMENT COMMANDS:${NC}"
         echo ""
         echo -e "${BLUE}🚀 START COMMANDS:${NC}"
-        echo "  $0 start-auto           - Start with auto top-30 pairs"
-        echo "  $0 start [preset]       - Start with specific preset"
-        echo "  $0 start-default        - Start with default preset"
+        echo "  $0 start [preset]       - Start bot in screen (recommended)"
+        echo "  $0 start-auto           - Start with ultra_liquid_8 in screen"
+        echo "  $0 start-direct [preset] - Start directly (no screen)"
+        echo "  $0 start-default        - Start with default preset in screen"
         echo ""
         echo -e "${YELLOW}🛑 STOP/RESTART COMMANDS:${NC}"
-        echo "  $0 stop                 - Stop bot"
-        echo "  $0 restart [preset]     - Restart with preset"
+        echo "  $0 stop                 - Stop bot and screen sessions"
+        echo "  $0 restart [preset]     - Restart with preset in screen"
         echo "  $0 quick-restart        - Quick stop & start ultra_liquid_8"
         echo "  $0 reload               - Alias for restart"
         echo ""
-        echo -e "${GREEN}📊 STATUS & INFO COMMANDS:${NC}"
-        echo "  $0 status               - Check bot status"
+        echo -e "${GREEN}📺 SCREEN COMMANDS:${NC}"
+        echo "  $0 attach [name]        - Attach to screen session"
+        echo "  $0 detach               - How to detach from screen"
+        echo "  $0 screens              - List active screen sessions"
+        echo "  $0 status               - Check bot & screen status"
+        echo ""
+        echo -e "${BLUE}📊 STATUS & INFO COMMANDS:${NC}"
         echo "  $0 show-top30           - Show current top-30 pairs"
         echo "  $0 show-symbols         - Show top symbols from exchange"
         echo "  $0 view-pairs           - View all pairs config"
         echo "  $0 logs                 - View bot logs"
         echo ""
-        echo -e "${BLUE}⚙️  CONFIG COMMANDS:${NC}"
+        echo -e "${YELLOW}⚙️  CONFIG COMMANDS:${NC}"
         echo "  $0 refresh-pairs        - Refresh pairs from exchange"
         echo "  $0 edit-pairs           - Edit pairs config"
         echo "  $0 add-pair <a> <b> [p] - Add new trading pair"
         echo "  $0 reset-data           - Reset historical data"
         echo ""
-        echo -e "${YELLOW}🔧 GIT COMMANDS:${NC}"
+        echo -e "${GREEN}🔧 GIT COMMANDS:${NC}"
         echo "  $0 git-pull             - Update code from git"
         echo "  $0 git-push             - Push changes to git"
         echo "  $0 git-sync             - Sync with git (pull + push)"
         echo "  $0 create-snapshot      - Create code snapshot file"
+        echo "  $0 full-update          - Full update: PULL → SNAPSHOT → PUSH"
         echo ""
-        echo -e "${GREEN}🧪 TEST COMMANDS:${NC}"
+        echo -e "${BLUE}🧪 TEST COMMANDS:${NC}"
         echo "  $0 test                 - Test all presets"
         echo "  $0 test-preset <name>   - Test specific preset"
         echo ""
-        echo -e "${BLUE}🚀 DEPLOY COMMANDS:${NC}"
+        echo -e "${YELLOW}🚀 DEPLOY COMMANDS:${NC}"
         echo "  $0 deploy               - Full deploy: update & restart"
-        echo "  $0 full-update          - Full update: PULL → SNAPSHOT → PUSH"
         echo ""
-        echo -e "${YELLOW}📋 AVAILABLE PRESETS:${NC}"
+        echo -e "${GREEN}📋 AVAILABLE PRESETS:${NC}"
         echo "  ultra_liquid_8, liquid_pairs_15, auto_top_30, auto_top_20"
         echo "  auto_top_15, auto_btc_focused, top_10_btc_pairs"
         echo ""
-        echo -e "${GREEN}💡 QUICK USAGE:${NC}"
-        echo "  ./run_bot.sh start ultra_liquid_8    # 🚀 Start with best pairs"
-        echo "  ./run_bot.sh quick-restart           # 🔄 Quick restart"
-        echo "  ./run_bot.sh deploy                  # 🚀 Full deploy"
-        echo "  ./run_bot.sh full-update             # 📦 Safe update: PULL→SNAPSHOT→PUSH"
+        echo -e "${BLUE}💡 SCREEN USAGE TIPS:${NC}"
+        echo "  Ctrl+A, then D          - Detach from screen session"
+        echo "  Ctrl+A, then \\          - Kill screen session"
+        echo "  screen -r name          - Reattach to session"
+        echo "  screen -ls              - List all sessions"
+        echo ""
+        echo -e "${GREEN}🎯 QUICK USAGE:${NC}"
+        echo "  ./run_bot.sh start ultra_liquid_8    # 🚀 Start in screen"
+        echo "  ./run_bot.sh attach                  # 📺 View bot in screen"
+        echo "  ./run_bot.sh status                  # 📊 Check status"
+        echo "  ./run_bot.sh stop                    # 🛑 Stop bot"
+        echo "  ./run_bot.sh deploy                  # 🔄 Full update & restart"
         ;;
 esac
