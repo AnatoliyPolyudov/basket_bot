@@ -29,10 +29,24 @@ print_info() {
     echo -e "${BLUE}📊 $1${NC}"
 }
 
+# Активация виртуального окружения
+activate_venv() {
+    if [ -f "venv/bin/activate" ]; then
+        source venv/bin/activate
+        print_status "Virtual environment activated"
+    else
+        print_warning "Virtual environment not found, using system Python"
+    fi
+}
+
 case "$1" in
     start|start-auto)
         PRESET="${2:-auto_top_30}"
         echo -e "${GREEN}🚀 STARTING BOT WITH PRESET: $PRESET${NC}"
+        
+        # Переходим в директорию и активируем venv
+        cd "$BOT_DIR"
+        activate_venv
         
         # Проверяем есть ли Python и зависимости
         if ! command -v python &> /dev/null; then
@@ -52,11 +66,14 @@ case "$1" in
     
     start-default)
         print_info "STARTING BOT WITH DEFAULT PRESET"
+        cd "$BOT_DIR"
+        activate_venv
         python monitor.py
         ;;
     
     stop)
         print_warning "STOPPING BOT..."
+        cd "$BOT_DIR"
         if pgrep -f "python monitor.py" > /dev/null; then
             pkill -f "python monitor.py"
             sleep 2
@@ -74,6 +91,9 @@ case "$1" in
         PRESET="${2:-auto_top_30}"
         print_info "RESTARTING BOT WITH PRESET: $PRESET"
         
+        cd "$BOT_DIR"
+        activate_venv
+        
         # Останавливаем бота
         if pgrep -f "python monitor.py" > /dev/null; then
             pkill -f "python monitor.py"
@@ -86,6 +106,7 @@ case "$1" in
     
     status)
         print_info "BOT STATUS:"
+        cd "$BOT_DIR"
         if pgrep -f "python monitor.py" > /dev/null; then
             print_status "Bot is RUNNING"
             echo "Active processes:"
@@ -105,26 +126,33 @@ case "$1" in
     
     test)
         print_info "TESTING ALL PRESETS..."
+        cd "$BOT_DIR"
+        activate_venv
         python monitor.py --test
         ;;
     
     test-preset)
         if [ -z "$2" ]; then
             print_error "Usage: $0 test-preset <preset_name>"
-            echo "   Available presets: auto_top_30, auto_top_20, auto_top_15, auto_btc_focused, top_10_btc_pairs"
+            echo "   Available presets: ultra_liquid_8, liquid_pairs_15, auto_top_30, auto_top_20, auto_top_15, auto_btc_focused, top_10_btc_pairs"
             exit 1
         fi
         print_info "TESTING PRESET: $2"
+        cd "$BOT_DIR"
+        activate_venv
         python monitor.py --preset "$2" --test
         ;;
     
     reset-data)
         print_warning "RESETTING HISTORICAL DATA..."
+        cd "$BOT_DIR"
+        activate_venv
         python reset_data.py
         ;;
     
     edit-pairs)
         print_info "EDITING PAIRS CONFIG..."
+        cd "$BOT_DIR"
         if command -v nano &> /dev/null; then
             nano pairs_config.py
         elif command -v vim &> /dev/null; then
@@ -136,6 +164,8 @@ case "$1" in
     
     view-pairs)
         print_info "VIEWING ALL PAIRS CONFIG:"
+        cd "$BOT_DIR"
+        activate_venv
         python -c "
 try:
     from pairs_config import get_all_presets
@@ -153,6 +183,8 @@ except Exception as e:
     
     show-top30)
         print_info "CURRENT TOP-30 PAIRS FROM EXCHANGE:"
+        cd "$BOT_DIR"
+        activate_venv
         python -c "
 try:
     from pairs_config import get_current_top_30_pairs
@@ -167,6 +199,8 @@ except Exception as e:
     
     show-symbols)
         print_info "TOP SYMBOLS FROM EXCHANGE:"
+        cd "$BOT_DIR"
+        activate_venv
         python -c "
 try:
     from pairs_config import get_top_symbols_from_exchange
@@ -181,6 +215,8 @@ except Exception as e:
     
     refresh-pairs|update-pairs)
         print_info "REFRESHING PAIRS FROM EXCHANGE..."
+        cd "$BOT_DIR"
+        activate_venv
         python -c "
 try:
     from pairs_config import refresh_presets
@@ -194,28 +230,72 @@ except Exception as e:
 "
         ;;
     
+    git-pull)
+        print_info "UPDATING CODE FROM GIT..."
+        cd "$BOT_DIR"
+        git pull origin main
+        if [ $? -eq 0 ]; then
+            print_status "Code updated successfully"
+        else
+            print_error "Git pull failed"
+        fi
+        ;;
+    
+    git-push)
+        print_info "PUSHING CHANGES TO GIT..."
+        cd "$BOT_DIR"
+        git add .
+        git commit -m "Update: $(date '+%Y-%m-%d %H:%M:%S')"
+        git push origin main
+        if [ $? -eq 0 ]; then
+            print_status "Changes pushed successfully"
+        else
+            print_error "Git push failed"
+        fi
+        ;;
+    
+    git-sync)
+        print_info "SYNCING WITH GIT (PULL + PUSH)..."
+        cd "$BOT_DIR"
+        git pull origin main
+        git add .
+        git commit -m "Update: $(date '+%Y-%m-%d %H:%M:%S')" || true
+        git push origin main
+        print_status "Git sync completed"
+        ;;
+    
+    create-snapshot)
+        print_info "CREATING CODE SNAPSHOT..."
+        cd "$BOT_DIR"
+        rm -f snap
+        for f in *.py; do
+            echo -e "\n\n===== $f =====\n\n" >> snap
+            cat "$f" >> snap
+        done
+        print_status "Snapshot created: snap"
+        ;;
+    
     add-pair)
         if [ -z "$2" ] || [ -z "$3" ]; then
             print_error "Usage: $0 add-pair <asset_a> <asset_b> [preset]"
-            echo "   Example: $0 add-pair BTC/USDT:USDT SOL/USDT:USDT auto_top_30"
+            echo "   Example: $0 add-pair BTC/USDT:USDT SOL/USDT:USDT ultra_liquid_8"
             exit 1
         fi
         ASSET_A="$2"
         ASSET_B="$3"
-        PRESET="${4:-auto_top_30}"
+        PRESET="${4:-ultra_liquid_8}"
         PAIR_NAME="${ASSET_A%%/*}_${ASSET_B%%/*}"
         
         print_info "ADDING PAIR: $PAIR_NAME ($ASSET_A / $ASSET_B) to preset: $PRESET"
         
+        cd "$BOT_DIR"
+        activate_venv
+        
         python -c "
 import json
 try:
-    # Читаем текущую конфигурацию
-    with open('pairs_config.py', 'r') as f:
-        content = f.read()
-    
-    # Извлекаем MANUAL_PRESETS
-    exec(content)
+    from pairs_config import get_all_presets
+    all_presets = get_all_presets()
     
     new_pair = {
         'asset_a': '$ASSET_A',
@@ -223,75 +303,20 @@ try:
         'name': '$PAIR_NAME'
     }
     
-    if '$PRESET' in MANUAL_PRESETS:
+    if '$PRESET' in all_presets:
         # Проверяем нет ли уже такой пары
-        for pair in MANUAL_PRESETS['$PRESET']:
+        for pair in all_presets['$PRESET']:
             if pair['name'] == '$PAIR_NAME':
                 print('❌ Pair already exists!')
                 exit(1)
         
-        MANUAL_PRESETS['$PRESET'].append(new_pair)
-        print('✅ Pair added successfully to manual preset!')
+        print('✅ Pair would be added to preset (manual editing required)')
+        print(f'   Please edit pairs_config.py and add:')
+        print(f'   {{\"asset_a\": \"$ASSET_A\", \"asset_b\": \"$ASSET_B\", \"name\": \"$PAIR_NAME\"}}')
     else:
-        print('❌ Preset not found in manual presets!')
-        print('   Available manual presets:', list(MANUAL_PRESETS.keys()))
+        print('❌ Preset not found!')
+        print('   Available presets:', list(all_presets.keys()))
         exit(1)
-    
-    # Сохраняем обратно в файл
-    with open('pairs_config.py', 'w') as f:
-        f.write('''#!/usr/bin/env python3
-\\\"\\\"\\\"
-КОНФИГУРАЦИЯ ТОРГОВЫХ ПАР - АВТОМАТИЧЕСКАЯ ЗАГРУЗКА ТОП-30
-\\\"\\\"\\\"
-
-import ccxt
-import json
-from typing import List, Dict
-
-def get_top_symbols_from_exchange(limit=30):
-    # ... (остальные функции остаются без изменений)
-    pass
-
-def get_fallback_symbols():
-    # ... (остальные функции остаются без изменений)
-    pass
-
-def generate_top_30_pairs(symbols: List[str]):
-    # ... (остальные функции остаются без изменений)
-    pass
-
-def get_current_top_30_pairs():
-    # ... (остальные функции остаются без изменений)
-    pass
-
-# РУЧНЫЕ ПРЕСЕТЫ
-MANUAL_PRESETS = %s
-
-def get_all_presets():
-    auto_pairs = get_current_top_30_pairs()
-    return {**MANUAL_PRESETS, **{
-        \"auto_top_30\": auto_pairs,
-        \"auto_top_20\": auto_pairs[:20],
-        \"auto_top_15\": auto_pairs[:15],
-        \"auto_btc_focused\": [p for p in auto_pairs if p[\"asset_a\"] == \"BTC/USDT:USDT\"][:15],
-    }}
-
-PAIR_PRESETS = get_all_presets()
-AVAILABLE_SYMBOLS = get_top_symbols_from_exchange(30) or get_fallback_symbols()
-
-def get_preset(preset_name):
-    all_presets = get_all_presets()
-    return all_presets.get(preset_name, [])
-
-def list_available_presets():
-    return list(get_all_presets().keys())
-
-def refresh_presets():
-    global PAIR_PRESETS, AVAILABLE_SYMBOLS
-    PAIR_PRESETS = get_all_presets()
-    AVAILABLE_SYMBOLS = get_top_symbols_from_exchange(30) or get_fallback_symbols()
-    return PAIR_PRESETS
-''' % (json.dumps(MANUAL_PRESETS, indent=4)))
     
 except Exception as e:
     print(f'❌ Error: {e}')
@@ -301,6 +326,7 @@ except Exception as e:
     
     logs)
         print_info "VIEWING BOT LOGS:"
+        cd "$BOT_DIR"
         if pgrep -f "python monitor.py" > /dev/null; then
             if [ -f "nohup.out" ]; then
                 tail -f nohup.out
@@ -315,31 +341,43 @@ except Exception as e:
         ;;
     
     quick-restart)
-        print_info "QUICK RESTART - STOP & START AUTO TOP-30"
+        print_info "QUICK RESTART - STOP & START ULTRA LIQUID 8"
+        cd "$BOT_DIR"
         ./run_bot.sh stop
         sleep 2
-        ./run_bot.sh start-auto
+        ./run_bot.sh start ultra_liquid_8
         ;;
     
     deploy)
-        print_info "FULL DEPLOY - REFRESH PAIRS & RESTART"
+        print_info "FULL DEPLOY - UPDATE CODE & RESTART"
+        cd "$BOT_DIR"
+        ./run_bot.sh git-pull
+        sleep 2
         ./run_bot.sh refresh-pairs
         sleep 2
         ./run_bot.sh quick-restart
+        ;;
+    
+    full-update)
+        print_info "FULL UPDATE - SYNC CODE & CREATE SNAPSHOT"
+        cd "$BOT_DIR"
+        ./run_bot.sh git-sync
+        ./run_bot.sh create-snapshot
+        print_status "Full update completed"
         ;;
     
     help|--help|-h|*)
         echo -e "${GREEN}🎯 BASKET BOT MANAGEMENT COMMANDS:${NC}"
         echo ""
         echo -e "${BLUE}🚀 START COMMANDS:${NC}"
-        echo "  $0 start-auto           - Start with auto top-30 pairs (recommended)"
+        echo "  $0 start-auto           - Start with auto top-30 pairs"
         echo "  $0 start [preset]       - Start with specific preset"
         echo "  $0 start-default        - Start with default preset"
         echo ""
         echo -e "${YELLOW}🛑 STOP/RESTART COMMANDS:${NC}"
         echo "  $0 stop                 - Stop bot"
         echo "  $0 restart [preset]     - Restart with preset"
-        echo "  $0 quick-restart        - Quick stop & start auto top-30"
+        echo "  $0 quick-restart        - Quick stop & start ultra_liquid_8"
         echo "  $0 reload               - Alias for restart"
         echo ""
         echo -e "${GREEN}📊 STATUS & INFO COMMANDS:${NC}"
@@ -355,20 +393,28 @@ except Exception as e:
         echo "  $0 add-pair <a> <b> [p] - Add new trading pair"
         echo "  $0 reset-data           - Reset historical data"
         echo ""
-        echo -e "${YELLOW}🧪 TEST COMMANDS:${NC}"
+        echo -e "${YELLOW}🔧 GIT COMMANDS:${NC}"
+        echo "  $0 git-pull             - Update code from git"
+        echo "  $0 git-push             - Push changes to git"
+        echo "  $0 git-sync             - Sync with git (pull + push)"
+        echo "  $0 create-snapshot      - Create code snapshot file"
+        echo ""
+        echo -e "${GREEN}🧪 TEST COMMANDS:${NC}"
         echo "  $0 test                 - Test all presets"
         echo "  $0 test-preset <name>   - Test specific preset"
         echo ""
-        echo -e "${GREEN}🚀 DEPLOY COMMANDS:${NC}"
-        echo "  $0 deploy               - Full deploy: refresh pairs & restart"
+        echo -e "${BLUE}🚀 DEPLOY COMMANDS:${NC}"
+        echo "  $0 deploy               - Full deploy: update & restart"
+        echo "  $0 full-update          - Full update: sync code & snapshot"
         echo ""
-        echo -e "${BLUE}📋 AVAILABLE PRESETS:${NC}"
-        echo "  auto_top_30, auto_top_20, auto_top_15, auto_btc_focused"
-        echo "  top_10_btc_pairs (manual)"
+        echo -e "${YELLOW}📋 AVAILABLE PRESETS:${NC}"
+        echo "  ultra_liquid_8, liquid_pairs_15, auto_top_30, auto_top_20"
+        echo "  auto_top_15, auto_btc_focused, top_10_btc_pairs"
         echo ""
-        echo -e "${YELLOW}💡 QUICK USAGE:${NC}"
-        echo "  ./run_bot.sh start-auto          # 🚀 Start with auto pairs"
-        echo "  ./run_bot.sh quick-restart       # 🔄 Quick restart"
-        echo "  ./run_bot.sh deploy              # 🚀 Full deploy"
+        echo -e "${GREEN}💡 QUICK USAGE:${NC}"
+        echo "  ./run_bot.sh start ultra_liquid_8    # 🚀 Start with best pairs"
+        echo "  ./run_bot.sh quick-restart           # 🔄 Quick restart"
+        echo "  ./run_bot.sh deploy                  # 🚀 Full deploy"
+        echo "  ./run_bot.sh full-update             # 📦 Full update with git sync"
         ;;
 esac
