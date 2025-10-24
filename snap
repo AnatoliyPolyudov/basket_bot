@@ -7,23 +7,32 @@
 def handle_callback(callback_data, trader):
     """
     Обработка нажатий кнопок Telegram.
-    callback_data: 'OPEN:LONG BTC / SHORT BASKET' или 'CLOSE:LONG BTC / SHORT BASKET'
+    callback_data: 'OPEN:SHORT_BTC_LONG_ETH:BTC_ETH' или 'CLOSE:SHORT_BTC_LONG_ETH:BTC_ETH'
     """
     try:
-        action, signal = callback_data.split(":", 1)
+        # 🆕 Обрабатываем новый формат с именем пары
+        parts = callback_data.split(":", 2)
+        if len(parts) == 3:
+            action, signal, pair_name = parts
+        elif len(parts) == 2:
+            action, signal = parts
+            pair_name = "UNKNOWN"
+        else:
+            print(f"❌ Invalid callback format: {callback_data}")
+            return
+            
         if trader is None:
             print("❌ Trader not provided for callback")
             return
 
         if action == "OPEN":
-            trader.open_position(signal)
+            trader.open_position(signal, pair_name)
         elif action == "CLOSE":
-            trader.close_position(signal)
+            trader.close_position(signal, pair_name)
         else:
             print(f"❌ Unknown callback action: {action}")
     except Exception as e:
         print(f"❌ Callback handler error: {e}")
-
 
 ===== console_observer.py =====
 
@@ -33,18 +42,29 @@ from datetime import datetime
 
 class ConsoleObserver(Observer):
     def update(self, data):
-        basket_symbols = data.get('basket_symbols', [])
-        symbols_text = "\n".join(basket_symbols) if basket_symbols else "—"
-
-        print(f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}] Basket Monitor Update")
-        print(f"Signal: {data.get('signal')}")
-        print(f"Z-score: {data.get('z', 0):.4f}")
-        print(f"Spread: {data.get('spread', 0):.6f}")
-        print(f"Basket Price: {data.get('basket_price', 0):.2f}")
-        print(f"Target Price: {data.get('target_price', 0):.2f}")
-        print(f"Current pairs:\n{symbols_text}")
+        # 🆕 ОБРАБАТЫВАЕМ НОВЫЙ ФОРМАТ ДАННЫХ
+        pairs_data = data.get('pairs_data', [])
+        total_pairs = data.get('total_pairs', 0)
+        active_pairs = data.get('active_pairs', 0)
+        
+        print(f"[{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')}] R-STYLE PAIR MONITOR")
+        print(f"Active Pairs: {active_pairs}/{total_pairs}")
         print("-" * 50)
-
+        
+        for pair_data in pairs_data:
+            pair_name = pair_data.get('pair_name', 'UNKNOWN')
+            signal = pair_data.get('signal', 'NO DATA')
+            z_score = pair_data.get('z', 0)
+            spread = pair_data.get('spread', 0)
+            adf_passed = pair_data.get('adf_passed', False)
+            
+            print(f"Pair: {pair_name}")
+            print(f"  Signal: {signal}")
+            print(f"  Z-score: {z_score:.4f}")
+            print(f"  Spread: {spread:.6f}")
+            print(f"  ADF: {'PASSED' if adf_passed else 'FAILED'}")
+            print(f"  Prices: {pair_data.get('asset_a', '')}={pair_data.get('price_a', 0):.2f} | {pair_data.get('asset_b', '')}={pair_data.get('price_b', 0):.2f}")
+            print("-" * 30)
 
 ===== monitor.py =====
 
@@ -454,7 +474,7 @@ import logging
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from monitor import SimpleBasketMonitor
+from monitor import RStylePairMonitor  # 🆕 ИМПОРТИРУЕМ НОВЫЙ КЛАСС
 
 logging.basicConfig(
     level=logging.INFO,
@@ -468,16 +488,17 @@ def main():
     print("=" * 60)
     
     try:
-        monitor = SimpleBasketMonitor()
+        monitor = RStylePairMonitor()  # 🆕 СОЗДАЕМ НОВЫЙ МОНИТОР
         print("📊 Starting complete data reset...")
         
         if monitor.complete_data_reset():
             print("✅ SUCCESS: Data reset completed successfully!")
             print("🎯 You can now run: python monitor.py")
             print("")
-            print("📈 Expected results after reset:")
-            print("   - Z-score: ±0.5 to ±2.0 (normal range)")
-            print("   - Accurate trading signals")
+            print("📈 R-STYLE PAIR TRADING READY:")
+            print("   - 4 trading pairs (1vs1)")
+            print("   - ADF tests on 120/90/60 bars") 
+            print("   - Z-score on 35-bar sliding window")
         else:
             print("❌ FAILED: Data reset failed!")
             
@@ -488,7 +509,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 ===== telegram_observer.py =====
 
@@ -655,50 +675,55 @@ class TelegramObserver(Observer):
 from observer import Observer
 import logging
 
-# Установи уровень WARNING вместо INFO
-logging.basicConfig(level=logging.WARNING)  # ← было INFO
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 class OKXBasketTrader(Observer):
     def __init__(self, paper_trading=True, max_exposure=1000):
-        """
-        paper_trading: True — не ставит реальные ордера, только выводит в консоль.
-        max_exposure: максимальная сумма на одну позицию.
-        """
         self.paper_trading = paper_trading
         self.max_exposure = max_exposure
-        self.current_positions = {}  # словарь вида {'BTC/USDT': size, 'ETH/USDT': size}
+        self.current_positions = {}  # 🆕 Формат: {pair_name: {signal: str, size: float}}
 
     def update(self, data):
         """
         Метод Observer: вызывается при каждом новом сигнале от монитора.
         """
-        signal = data.get("signal")
-        if signal and signal != "HOLD":  # ← ДОБАВЛЕНО: игнорируем HOLD сигналы
-            self.execute_signal(signal, data)
+        # 🆕 ОБРАБАТЫВАЕМ ДАННЫЕ ОТ R-ПОДХОДА
+        pairs_data = data.get('pairs_data', [])
+        
+        for pair_data in pairs_data:
+            signal = pair_data.get("signal")
+            pair_name = pair_data.get("pair_name")
+            
+            if signal and signal != "HOLD" and signal != "NO DATA" and signal != "NO TRADE - NOT STATIONARY":
+                self.execute_signal(signal, pair_data, pair_name)
 
-    def execute_signal(self, signal, data):
+    def execute_signal(self, signal, data, pair_name):
         """
-        Пока просто выводит, что будет сделано.
+        Обработка сигнала для конкретной пары.
         """
         if self.paper_trading:
-            # Используем debug вместо info для спам-сообщений
-            logger.debug(f"[PAPER TRADING] Signal received: {signal}")
-            logger.debug(f"[PAPER TRADING] Data: {data}")
+            logger.debug(f"[PAPER TRADING] Pair {pair_name}: Signal received: {signal}")
         else:
-            logger.info(f"[REAL TRADING] Would execute: {signal}")
+            logger.info(f"[REAL TRADING] Pair {pair_name}: Would execute: {signal}")
 
     # --- Методы для кнопок ---
-    def open_position(self, signal: str, size=None):
+    def open_position(self, signal: str, pair_name: str, size=None):
         if size is None:
-            size = self.max_exposure
-        self.current_positions[signal] = size
-        # Оставляем info только для важных действий
-        logger.info(f"✅ [PAPER] OPENED: {signal} with size {size}")
+            size = self.max_exposure / 4  # 🆕 Распределяем капитал по парам
+        
+        # 🆕 Сохраняем позицию с информацией о паре
+        self.current_positions[pair_name] = {
+            'signal': signal,
+            'size': size,
+            'pair_name': pair_name
+        }
+        logger.info(f"✅ [PAPER] OPENED: {pair_name} - {signal} with size {size}")
 
-    def close_position(self, signal: str):
-        if signal in self.current_positions:
-            del self.current_positions[signal]
-            logger.info(f"✅ [PAPER] CLOSED: {signal}")
+    def close_position(self, signal: str, pair_name: str):
+        if pair_name in self.current_positions:
+            position = self.current_positions[pair_name]
+            del self.current_positions[pair_name]
+            logger.info(f"✅ [PAPER] CLOSED: {pair_name} - {position['signal']}")
         else:
-            logger.warning(f"⚠️ [PAPER] No open position to close for {signal}")
+            logger.warning(f"⚠️ [PAPER] No open position to close for {pair_name}")
