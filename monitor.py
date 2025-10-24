@@ -28,7 +28,7 @@ class RStylePairMonitor(Subject):
             "sandbox": False
         })
         
-        # 🎯 TOP-20 ПАР С OKX (1vs1)
+        # 🎯 TOP-20 ПАР С OKX (1vs1) - БЕЗ MATIC
         self.trading_pairs = [
             # BTC с топовыми альтами
             {"asset_a": "BTC/USDT:USDT", "asset_b": "ETH/USDT:USDT", "name": "BTC_ETH"},
@@ -39,8 +39,8 @@ class RStylePairMonitor(Subject):
             {"asset_a": "BTC/USDT:USDT", "asset_b": "AVAX/USDT:USDT", "name": "BTC_AVAX"},
             {"asset_a": "BTC/USDT:USDT", "asset_b": "DOT/USDT:USDT", "name": "BTC_DOT"},
             {"asset_a": "BTC/USDT:USDT", "asset_b": "LINK/USDT:USDT", "name": "BTC_LINK"},
-            {"asset_a": "BTC/USDT:USDT", "asset_b": "MATIC/USDT:USDT", "name": "BTC_MATIC"},
             {"asset_a": "BTC/USDT:USDT", "asset_b": "LTC/USDT:USDT", "name": "BTC_LTC"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "ATOM/USDT:USDT", "name": "BTC_ATOM"},
             
             # ETH с другими топовыми альтами
             {"asset_a": "ETH/USDT:USDT", "asset_b": "BNB/USDT:USDT", "name": "ETH_BNB"},
@@ -48,13 +48,13 @@ class RStylePairMonitor(Subject):
             {"asset_a": "ETH/USDT:USDT", "asset_b": "XRP/USDT:USDT", "name": "ETH_XRP"},
             {"asset_a": "ETH/USDT:USDT", "asset_b": "ADA/USDT:USDT", "name": "ETH_ADA"},
             {"asset_a": "ETH/USDT:USDT", "asset_b": "AVAX/USDT:USDT", "name": "ETH_AVAX"},
+            {"asset_a": "ETH/USDT:USDT", "asset_b": "DOT/USDT:USDT", "name": "ETH_DOT"},
             
             # Другие популярные пары
             {"asset_a": "BNB/USDT:USDT", "asset_b": "SOL/USDT:USDT", "name": "BNB_SOL"},
             {"asset_a": "SOL/USDT:USDT", "asset_b": "AVAX/USDT:USDT", "name": "SOL_AVAX"},
             {"asset_a": "XRP/USDT:USDT", "asset_b": "ADA/USDT:USDT", "name": "XRP_ADA"},
             {"asset_a": "DOT/USDT:USDT", "asset_b": "LINK/USDT:USDT", "name": "DOT_LINK"},
-            {"asset_a": "MATIC/USDT:USDT", "asset_b": "LTC/USDT:USDT", "name": "MATIC_LTC"},
         ]
         
         # Все уникальные символы для загрузки данных
@@ -253,16 +253,30 @@ class RStylePairMonitor(Subject):
             all_prices = {}
             for i in range(0, len(self.all_symbols), 10):
                 symbols_batch = self.all_symbols[i:i+10]
-                tickers = self.exchange.fetch_tickers(symbols_batch)
+                try:
+                    tickers = self.exchange.fetch_tickers(symbols_batch)
+                    
+                    for symbol in symbols_batch:
+                        if symbol in tickers and tickers[symbol].get("last") is not None:
+                            all_prices[symbol] = tickers[symbol]["last"]
+                        else:
+                            logger.warning(f"⚠️ Missing price for {symbol}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Batch price error: {e}")
+                    # Продолжаем с другими батчами
                 
-                for symbol in symbols_batch:
-                    if symbol in tickers and tickers[symbol].get("last") is not None:
-                        all_prices[symbol] = tickers[symbol]["last"]
-                    else:
-                        logger.warning(f"⚠️ Missing price for {symbol}")
-                        return None
-                
-                time.sleep(0.1)  # Небольшая пауза между запросами
+                time.sleep(0.2)  # Пауза между запросами
+            
+            # Проверяем что загрузились все необходимые цены
+            required_symbols = set()
+            for pair in self.trading_pairs:
+                required_symbols.add(pair["asset_a"])
+                required_symbols.add(pair["asset_b"])
+            
+            missing_prices = required_symbols - set(all_prices.keys())
+            if missing_prices:
+                logger.warning(f"⚠️ Missing prices for: {missing_prices}")
+                return None
                     
             return all_prices
         except Exception as e:
