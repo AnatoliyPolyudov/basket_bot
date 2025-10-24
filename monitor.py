@@ -28,12 +28,33 @@ class RStylePairMonitor(Subject):
             "sandbox": False
         })
         
-        # 🎯 ПАРЫ КАК В R-ПРОЕКТЕ (1vs1)
+        # 🎯 TOP-20 ПАР С OKX (1vs1)
         self.trading_pairs = [
-            {"asset_a": "ETH/USDT:USDT", "asset_b": "BNB/USDT:USDT", "name": "ETH_BNB"},
+            # BTC с топовыми альтами
             {"asset_a": "BTC/USDT:USDT", "asset_b": "ETH/USDT:USDT", "name": "BTC_ETH"},
-            {"asset_a": "SOL/USDT:USDT", "asset_b": "DOT/USDT:USDT", "name": "SOL_DOT"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "BNB/USDT:USDT", "name": "BTC_BNB"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "SOL/USDT:USDT", "name": "BTC_SOL"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "XRP/USDT:USDT", "name": "BTC_XRP"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "ADA/USDT:USDT", "name": "BTC_ADA"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "AVAX/USDT:USDT", "name": "BTC_AVAX"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "DOT/USDT:USDT", "name": "BTC_DOT"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "LINK/USDT:USDT", "name": "BTC_LINK"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "MATIC/USDT:USDT", "name": "BTC_MATIC"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "LTC/USDT:USDT", "name": "BTC_LTC"},
+            
+            # ETH с другими топовыми альтами
+            {"asset_a": "ETH/USDT:USDT", "asset_b": "BNB/USDT:USDT", "name": "ETH_BNB"},
+            {"asset_a": "ETH/USDT:USDT", "asset_b": "SOL/USDT:USDT", "name": "ETH_SOL"},
+            {"asset_a": "ETH/USDT:USDT", "asset_b": "XRP/USDT:USDT", "name": "ETH_XRP"},
+            {"asset_a": "ETH/USDT:USDT", "asset_b": "ADA/USDT:USDT", "name": "ETH_ADA"},
+            {"asset_a": "ETH/USDT:USDT", "asset_b": "AVAX/USDT:USDT", "name": "ETH_AVAX"},
+            
+            # Другие популярные пары
+            {"asset_a": "BNB/USDT:USDT", "asset_b": "SOL/USDT:USDT", "name": "BNB_SOL"},
+            {"asset_a": "SOL/USDT:USDT", "asset_b": "AVAX/USDT:USDT", "name": "SOL_AVAX"},
             {"asset_a": "XRP/USDT:USDT", "asset_b": "ADA/USDT:USDT", "name": "XRP_ADA"},
+            {"asset_a": "DOT/USDT:USDT", "asset_b": "LINK/USDT:USDT", "name": "DOT_LINK"},
+            {"asset_a": "MATIC/USDT:USDT", "asset_b": "LTC/USDT:USDT", "name": "MATIC_LTC"},
         ]
         
         # Все уникальные символы для загрузки данных
@@ -45,12 +66,12 @@ class RStylePairMonitor(Subject):
         
         self.historical_data = {}
         self.timeframe = "15m"
-        self.lookback_bars = 672
+        self.lookback_bars = 672  # 7 дней данных
         self.data_loaded = False
         self.window_bars = 35  # Скользящее окно для Z-score
         
-        # 🎯 ADF НАСТРОЙКИ КАК В R
-        self.adf_lookbacks = [120, 90, 60]  # 120, 90, 60 баров
+        # 🎯 ADF НАСТРОЙКИ (временно уменьшены для тестирования)
+        self.adf_lookbacks = [60, 40, 20]  # Будет [120, 90, 60] после отладки
         self.adf_critical_value = -2.58  # 10% уровень значимости
         
         # 🎯 Храним состояние для каждой пары
@@ -59,12 +80,14 @@ class RStylePairMonitor(Subject):
             self.pair_states[pair["name"]] = {
                 'current_signal': 'HOLD',
                 'adf_passed': False,
-                'position_open': False
+                'position_open': False,
+                'data_loaded': False
             }
         
     def complete_data_reset(self):
         """ПОЛНЫЙ СБРОС всех данных и перезагрузка"""
         logger.info("🗑️ COMPLETE DATA RESET INITIATED...")
+        logger.info(f"🎯 Loading data for {len(self.all_symbols)} symbols and {len(self.trading_pairs)} pairs")
         
         self.historical_data = {}
         self.data_loaded = False
@@ -73,11 +96,20 @@ class RStylePairMonitor(Subject):
             logger.info("✅ COMPLETE RESET SUCCESSFUL - Fresh data loaded")
             
             # Тестируем ADF для каждой пары
+            successful_pairs = 0
             for pair in self.trading_pairs:
                 spread_data = self.get_pair_historical_spread(pair)
                 if spread_data is not None:
                     adf_passed = self.calculate_adf_test(spread_data)
-                    logger.info(f"📊 {pair['name']} ADF: {'PASSED' if adf_passed else 'FAILED'}")
+                    self.pair_states[pair["name"]]['data_loaded'] = True
+                    self.pair_states[pair["name"]]['adf_passed'] = adf_passed
+                    if adf_passed:
+                        successful_pairs += 1
+                    logger.info(f"📊 {pair['name']}: ADF {'PASSED' if adf_passed else 'FAILED'}")
+                else:
+                    logger.warning(f"❌ {pair['name']}: No historical data")
+            
+            logger.info(f"🎯 Successfully initialized {successful_pairs}/{len(self.trading_pairs)} pairs")
             return True
         else:
             logger.error("❌ COMPLETE RESET FAILED")
@@ -89,7 +121,7 @@ class RStylePairMonitor(Subject):
             logger.info("📊 Historical data already loaded, skipping...")
             return True
             
-        logger.info("🔄 FETCHING FRESH HISTORICAL DATA FROM OKX...")
+        logger.info(f"🔄 FETCHING DATA FOR {len(self.all_symbols)} SYMBOLS FROM OKX...")
         
         success_count = 0
         for symbol in self.all_symbols:
@@ -98,29 +130,33 @@ class RStylePairMonitor(Subject):
                 if ohlcv and len(ohlcv) >= 100:
                     self.historical_data[symbol] = [c[4] for c in ohlcv]
                     success_count += 1
-                    logger.info(f"✅ Loaded {len(self.historical_data[symbol])} bars for {symbol}")
+                    logger.info(f"✅ {symbol}: {len(self.historical_data[symbol])} bars")
                 else:
                     logger.warning(f"❌ No data for {symbol}")
             except Exception as e:
                 logger.warning(f"❌ Error loading {symbol}: {e}")
         
-        if len(self.historical_data) >= 4:
+        if success_count >= 10:  # Минимум 10 символов для работы
             self.data_loaded = True
-            logger.info(f"🎯 Successfully loaded {success_count} symbols")
+            logger.info(f"🎯 Successfully loaded {success_count}/{len(self.all_symbols)} symbols")
             return True
         else:
-            logger.error(f"❌ Not enough valid symbols: {len(self.historical_data)}/4")
+            logger.error(f"❌ Not enough valid symbols: {success_count}/{len(self.all_symbols)}")
             return False
 
     def get_pair_historical_spread(self, pair):
         """Исторический спред для конкретной пары"""
-        if pair["asset_a"] not in self.historical_data or pair["asset_b"] not in self.historical_data:
+        if pair["asset_a"] not in self.historical_data:
+            return None
+        if pair["asset_b"] not in self.historical_data:
             return None
             
-        min_len = min(len(self.historical_data[pair["asset_a"]]), 
-                      len(self.historical_data[pair["asset_b"]]))
+        len_a = len(self.historical_data[pair["asset_a"]])
+        len_b = len(self.historical_data[pair["asset_b"]])
         
-        if min_len < 100:
+        min_len = min(len_a, len_b)
+        
+        if min_len < max(self.adf_lookbacks):
             return None
             
         prices_a = np.array(self.historical_data[pair["asset_a"]][-min_len:])
@@ -130,12 +166,11 @@ class RStylePairMonitor(Subject):
         return spread
 
     def calculate_adf_test(self, spread_data):
-        """ADF тест на стационарность как в R-проекте"""
+        """ADF тест на стационарность"""
         if spread_data is None or len(spread_data) < max(self.adf_lookbacks):
             return False
         
         try:
-            # 🎯 ТОЧНАЯ КОПИЯ ЛОГИКИ ИЗ R-КОДА
             adf_passed = True
             
             for lookback in self.adf_lookbacks:
@@ -143,14 +178,10 @@ class RStylePairMonitor(Subject):
                     adf_passed = False
                     break
                     
-                # Берем данные для теста (скользящее окно)
                 test_data = spread_data[-lookback:]
-                
-                # ADF тест с параметрами как в R
                 adf_result = adfuller(test_data, maxlag=1, regression='c', autolag=None)
-                adf_statistic = adf_result[0]  # ADF статистика
+                adf_statistic = adf_result[0]
                 
-                # Проверка как в R: adf_statistic <= criticalValue
                 if adf_statistic > self.adf_critical_value:
                     adf_passed = False
                     break
@@ -158,7 +189,7 @@ class RStylePairMonitor(Subject):
             return adf_passed
             
         except Exception as e:
-            logger.warning(f"❌ ADF test error for pair: {e}")
+            logger.warning(f"❌ ADF test error: {e}")
             return False
 
     def calculate_pair_spread(self, pair, current_prices):
@@ -185,7 +216,6 @@ class RStylePairMonitor(Subject):
         if historical_spread is None or len(historical_spread) < self.window_bars:
             return None, None, None
         
-        # Используем скользящее окно
         window_data = historical_spread[-self.window_bars:]
         
         mean = np.mean(window_data)
@@ -203,7 +233,6 @@ class RStylePairMonitor(Subject):
         if z is None:
             return "NO DATA"
             
-        # 🎯 НЕ ТОРГУЕМ ЕСЛИ СПРЕД НЕ СТАЦИОНАРЕН
         if not is_stationary:
             return "NO TRADE - NOT STATIONARY"
             
@@ -220,25 +249,31 @@ class RStylePairMonitor(Subject):
     def get_current_prices(self):
         """Получение текущих цен для всех символов"""
         try:
-            tickers = self.exchange.fetch_tickers(self.all_symbols)
-            prices = {}
-            
-            for symbol in self.all_symbols:
-                if symbol in tickers and tickers[symbol].get("last") is not None:
-                    prices[symbol] = tickers[symbol]["last"]
-                else:
-                    logger.warning(f"⚠️ Missing price for {symbol}")
-                    return None
+            # Разбиваем на группы по 10 символов чтобы избежать лимитов
+            all_prices = {}
+            for i in range(0, len(self.all_symbols), 10):
+                symbols_batch = self.all_symbols[i:i+10]
+                tickers = self.exchange.fetch_tickers(symbols_batch)
+                
+                for symbol in symbols_batch:
+                    if symbol in tickers and tickers[symbol].get("last") is not None:
+                        all_prices[symbol] = tickers[symbol]["last"]
+                    else:
+                        logger.warning(f"⚠️ Missing price for {symbol}")
+                        return None
+                
+                time.sleep(0.1)  # Небольшая пауза между запросами
                     
-            return prices
+            return all_prices
         except Exception as e:
             logger.warning(f"❌ Error fetching prices: {e}")
             return None
 
     def run(self, interval_minutes=1):
         """Основной цикл мониторинга для всех пар"""
-        logger.info("🚀 Starting R-STYLE PAIR MONITOR...")
+        logger.info("🚀 Starting R-STYLE PAIR MONITOR WITH 20 PAIRS...")
         logger.info(f"🎯 Monitoring {len(self.trading_pairs)} trading pairs")
+        logger.info(f"🎯 {len(self.all_symbols)} unique symbols")
         logger.info(f"🎯 ADF Lookbacks: {self.adf_lookbacks} bars")
         logger.info(f"🎯 Z-score Window: {self.window_bars} bars")
         logger.info(f"🎯 R-STYLE THRESHOLDS: ENTER ±1.0, EXIT ±0.5")
@@ -267,8 +302,14 @@ class RStylePairMonitor(Subject):
                 
                 # 🎯 ОБРАБАТЫВАЕМ КАЖДУЮ ПАРУ НЕЗАВИСИМО
                 all_pair_data = []
+                active_pairs_count = 0
+                trading_signals_count = 0
                 
                 for pair in self.trading_pairs:
+                    # Пропускаем пары без данных
+                    if not self.pair_states[pair["name"]]['data_loaded']:
+                        continue
+                        
                     # Расчет Z-score и ADF для пары
                     z, spread, stats = self.calculate_zscore_for_pair(pair, prices)
                     historical_spread = self.get_pair_historical_spread(pair)
@@ -280,13 +321,18 @@ class RStylePairMonitor(Subject):
                     self.pair_states[pair["name"]]['adf_passed'] = is_stationary
                     self.pair_states[pair["name"]]['current_signal'] = signal
                     
-                    # Логирование для пары
-                    if z is not None:
-                        adf_status = "STATIONARY" if is_stationary else "NON-STATIONARY"
+                    if is_stationary:
+                        active_pairs_count += 1
+                    if signal not in ["HOLD", "NO DATA", "NO TRADE - NOT STATIONARY"]:
+                        trading_signals_count += 1
+                    
+                    # Логирование только для пар с данными и сигналами
+                    if z is not None and is_stationary:
+                        adf_status = "STATIONARY"
                         status = "🚨 ABNORMAL" if abs(z) > 3.0 else "✅ NORMAL"
                         
-                        logger.info(f"[{current_time}] {pair['name']}: Z={z:5.2f} {status} | ADF: {adf_status}")
-                        logger.info(f"   Signal: {signal} | Spread: {spread:.3f}")
+                        if signal != "HOLD":
+                            logger.info(f"[{current_time}] {pair['name']}: Z={z:5.2f} {status} | {signal}")
                     
                     # Собираем данные для уведомлений
                     pair_data = {
@@ -302,16 +348,19 @@ class RStylePairMonitor(Subject):
                     }
                     all_pair_data.append(pair_data)
                 
+                # Сводка по итерации
+                logger.info(f"📊 [{current_time}] Active: {active_pairs_count}/{len(self.trading_pairs)} | Signals: {trading_signals_count}")
+                
                 # Уведомляем наблюдателей
                 report_data = {
                     "time": datetime.utcnow(),
                     "pairs_data": all_pair_data,
                     "total_pairs": len(self.trading_pairs),
-                    "active_pairs": len([p for p in all_pair_data if p['adf_passed']])
+                    "active_pairs": active_pairs_count,
+                    "trading_signals": trading_signals_count
                 }
                 self.notify(report_data)
                 
-                logger.info("-" * 60)  # Разделитель между итерациями
                 time.sleep(interval_minutes * 60)
                 
             except KeyboardInterrupt:
