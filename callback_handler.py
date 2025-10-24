@@ -1,16 +1,13 @@
-# callback_handler.py
-def handle_callback(callback_data, trader, telegram_observer=None):
+def handle_callback(callback_data, trader, telegram_observer=None, current_data=None):
     """
-    Обработка нажатий кнопок Telegram.
+    Обработка нажатий кнопок Telegram
     """
     try:
-        # 🆕 ОБРАБАТЫВАЕМ КОМАНДЫ УПРАВЛЕНИЯ
         if callback_data in ['SUMMARY', 'CLOSE_ALL', 'ENABLE_AUTO', 'DISABLE_AUTO', 'EXPORT_LOG']:
             if telegram_observer:
-                telegram_observer.handle_management_callback(callback_data, trader)
+                telegram_observer.handle_management_callback(callback_data, trader, current_data)
             return
             
-        # Обработка торговых команд
         parts = callback_data.split(":", 2)
         if len(parts) == 3:
             action, signal, pair_name = parts
@@ -26,7 +23,6 @@ def handle_callback(callback_data, trader, telegram_observer=None):
             return
 
         if action == "OPEN":
-            # 🆕 ДОБАВЛЯЕМ МЕТКУ MANUAL ДЛЯ ОТСЛЕЖИВАНИЯ
             trader.open_position(f"MANUAL_{signal}", pair_name)
         elif action == "CLOSE":
             trader.close_position(signal, pair_name, "Manual close from Telegram")
