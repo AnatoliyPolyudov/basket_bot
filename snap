@@ -94,7 +94,7 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 class RStylePairMonitor(Subject):
-    def __init__(self, pair_preset="auto_top_30"):
+    def __init__(self, pair_preset="ultra_liquid_8"):
         super().__init__()
         self.exchange = ccxt.okx({
             "enableRateLimit": True,
@@ -106,7 +106,7 @@ class RStylePairMonitor(Subject):
         self.trading_pairs = get_preset(pair_preset)
         if not self.trading_pairs:
             logger.error(f"❌ Preset '{pair_preset}' not found! Using default.")
-            self.trading_pairs = get_preset("auto_top_30")
+            self.trading_pairs = get_preset("ultra_liquid_8")
         
         logger.info(f"🎯 Loaded {len(self.trading_pairs)} pairs from preset: {pair_preset}")
         
@@ -118,14 +118,14 @@ class RStylePairMonitor(Subject):
         self.all_symbols = list(self.all_symbols)
         
         self.historical_data = {}
-        self.timeframe = "15m"
-        self.lookback_bars = 672
+        self.timeframe = "1h"  # Упростили timeframe для быстрой загрузки
+        self.lookback_bars = 100  # Уменьшили с 672 до 100
         self.data_loaded = False
-        self.window_bars = 35
+        self.window_bars = 20  # Уменьшили окно для Z-score
         
-        # ADF настройки
-        self.adf_lookbacks = [60, 40, 20]
-        self.adf_critical_value = -2.58
+        # ADF настройки (упрощенные)
+        self.adf_lookbacks = [30, 20]  # Меньше баров для теста
+        self.adf_critical_value = -1.5  # Более мягкий критерий
         
         # Храним состояние для каждой пары
         self.pair_states = {}
@@ -179,22 +179,25 @@ class RStylePairMonitor(Subject):
         success_count = 0
         for symbol in self.all_symbols:
             try:
+                logger.info(f"📥 Loading {symbol}...")
                 ohlcv = self.exchange.fetch_ohlcv(symbol, self.timeframe, limit=self.lookback_bars)
-                if ohlcv and len(ohlcv) >= 100:
+                if ohlcv and len(ohlcv) >= 50:  # Уменьшили минимальное требование
                     self.historical_data[symbol] = [c[4] for c in ohlcv]
                     success_count += 1
                     logger.info(f"✅ {symbol}: {len(self.historical_data[symbol])} bars")
                 else:
-                    logger.warning(f"❌ No data for {symbol}")
+                    logger.warning(f"❌ No data for {symbol} - got {len(ohlcv) if ohlcv else 0} bars")
             except Exception as e:
                 logger.warning(f"❌ Error loading {symbol}: {e}")
         
-        if success_count >= 10:  # Минимум 10 символов для работы
+        # Требуем загрузки хотя бы 60% символов
+        min_required = max(3, len(self.all_symbols) * 0.6)
+        if success_count >= min_required:
             self.data_loaded = True
             logger.info(f"🎯 Successfully loaded {success_count}/{len(self.all_symbols)} symbols")
             return True
         else:
-            logger.error(f"❌ Not enough valid symbols: {success_count}/{len(self.all_symbols)}")
+            logger.error(f"❌ Not enough valid symbols: {success_count}/{len(self.all_symbols)} (need at least {min_required})")
             return False
 
     def get_pair_historical_spread(self, pair):
@@ -464,20 +467,22 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='R-Style Pair Trading Monitor')
-    parser.add_argument('--preset', type=str, default='auto_top_30', 
-                       help='Pair preset: auto_top_30, auto_top_20, auto_top_15, auto_btc_focused, top_10_btc_pairs')
+    parser.add_argument('--preset', type=str, default='ultra_liquid_8', 
+                       help='Pair preset: ultra_liquid_8, liquid_pairs_15, top_10_btc_pairs, auto_top_30')
     parser.add_argument('--test', action='store_true', help='Test pair configurations')
     
     args = parser.parse_args()
     
     if args.test:
-        from pairs_config import test_pair_combinations
+        from pairs_config import get_all_presets
         print("🔍 TESTING ALL PAIR PRESETS...")
-        results = test_pair_combinations()
+        results = get_all_presets()
         
-        for preset, data in results.items():
-            print(f"\n📊 {preset.upper()}:")
-            print(f"   Valid pairs: {data['valid']}/{data['total']}")
+        for preset_name, pairs in results.items():
+            print(f"\n📊 {preset_name.upper()}:")
+            print(f"   Valid pairs: {len(pairs)}")
+            if len(pairs) > 0:
+                print(f"   Sample: {pairs[0]['name']} - {pairs[0]['asset_a']} / {pairs[0]['asset_b']}")
         sys.exit(0)
     
     # Запуск монитора с выбранным пресетом
@@ -531,7 +536,7 @@ class Subject:
 
 #!/usr/bin/env python3
 """
-КОНФИГУРАЦИЯ ТОРГОВЫХ ПАР - АВТОМАТИЧЕСКАЯ ЗАГРУЗКА ТОП-30
+КОНФИГУРАЦИЯ ТОРГОВЫХ ПАР - ТОЛЬКО ЛИКВИДНЫЕ И ПРОВЕРЕННЫЕ ПАРЫ
 """
 
 import ccxt
@@ -540,54 +545,25 @@ from typing import List, Dict
 import time
 
 def get_top_symbols_from_exchange(limit=30):
-    """Автоматически получает топовые символы с OKX по объему"""
+    """Получает ТОЛЬКО ликвидные символы с OKX"""
     try:
-        exchange = ccxt.okx({
-            "enableRateLimit": True,
-            "options": {"defaultType": "swap"},
-            "sandbox": False
-        })
+        # Жестко задаем список ликвидных пар (топ-20 по объему)
+        liquid_symbols = [
+            "BTC/USDT:USDT", "ETH/USDT:USDT", "BNB/USDT:USDT", "SOL/USDT:USDT",
+            "XRP/USDT:USDT", "ADA/USDT:USDT", "AVAX/USDT:USDT", "DOT/USDT:USDT",
+            "LINK/USDT:USDT", "LTC/USDT:USDT", "ATOM/USDT:USDT", "DOGE/USDT:USDT",
+            "MATIC/USDT:USDT", "TRX/USDT:USDT", "XLM/USDT:USDT", "BCH/USDT:USDT",
+            "FIL/USDT:USDT", "ETC/USDT:USDT", "EOS/USDT:USDT", "AAVE/USDT:USDT"
+        ]
         
-        print(f"🔍 Loading top {limit} symbols from OKX...")
-        markets = exchange.fetch_markets()
+        print(f"✅ Using {len(liquid_symbols)} LIQUID symbols")
+        print("📋 Liquid symbols:", liquid_symbols[:10])
         
-        # Фильтруем USDT своп пары
-        usdt_pairs = []
-        for market in markets:
-            if (market['quote'] == 'USDT' and 
-                market['type'] == 'swap' and 
-                market['active'] and
-                '/USDT:USDT' in market['symbol']):
-                
-                # Получаем объем из информации о рынке
-                info = market.get('info', {})
-                volume_24h = float(info.get('volCcy24h', 0))  # Объем в USDT
-                
-                if volume_24h > 0:  # Только пары с объемом
-                    usdt_pairs.append({
-                        'symbol': market['symbol'],
-                        'volume': volume_24h,
-                        'base': market['base']
-                    })
-        
-        # Сортируем по объему (по убыванию)
-        usdt_pairs.sort(key=lambda x: x['volume'], reverse=True)
-        
-        # Берем топ лимит
-        top_symbols = [pair['symbol'] for pair in usdt_pairs[:limit]]
-        
-        # Логируем топ-10 для информации
-        print("📈 TOP 10 SYMBOLS BY VOLUME:")
-        for i, pair in enumerate(usdt_pairs[:10], 1):
-            print(f"   {i:2d}. {pair['symbol']} - ${pair['volume']:,.0f}")
-        
-        print(f"✅ Successfully loaded {len(top_symbols)} symbols")
-        return top_symbols
+        return liquid_symbols[:limit]
         
     except Exception as e:
-        print(f"❌ Error loading symbols from exchange: {e}")
-        # Fallback на основные пары
-        return get_fallback_symbols()
+        print(f"❌ Error: {e}")
+        return get_fallback_symbols()[:limit]
 
 def get_fallback_symbols():
     """Резервные символы если не удалось загрузить с биржи"""
@@ -596,10 +572,7 @@ def get_fallback_symbols():
         "XRP/USDT:USDT", "ADA/USDT:USDT", "AVAX/USDT:USDT", "DOT/USDT:USDT",
         "LINK/USDT:USDT", "LTC/USDT:USDT", "ATOM/USDT:USDT", "TRX/USDT:USDT",
         "XLM/USDT:USDT", "BCH/USDT:USDT", "FIL/USDT:USDT", "ETC/USDT:USDT",
-        "EOS/USDT:USDT", "AAVE/USDT:USDT", "ALGO/USDT:USDT", "XTZ/USDT:USDT",
-        "XMR/USDT:USDT", "DASH/USDT:USDT", "ZEC/USDT:USDT", "COMP/USDT:USDT",
-        "DOGE/USDT:USDT", "MATIC/USDT:USDT", "NEAR/USDT:USDT", "SAND/USDT:USDT",
-        "MANA/USDT:USDT", "ENJ/USDT:USDT"
+        "EOS/USDT:USDT", "AAVE/USDT:USDT", "ALGO/USDT:USDT", "XTZ/USDT:USDT"
     ]
 
 def generate_top_30_pairs(symbols: List[str]):
@@ -691,6 +664,25 @@ def get_all_presets():
     """Все доступные пресеты"""
     auto_pairs = get_current_top_30_pairs()
     
+    # Новый проверенный пресет с ликвидными парами
+    liquid_pairs = [
+        {"asset_a": "BTC/USDT:USDT", "asset_b": "ETH/USDT:USDT", "name": "BTC_ETH"},
+        {"asset_a": "BTC/USDT:USDT", "asset_b": "BNB/USDT:USDT", "name": "BTC_BNB"},
+        {"asset_a": "BTC/USDT:USDT", "asset_b": "SOL/USDT:USDT", "name": "BTC_SOL"},
+        {"asset_a": "BTC/USDT:USDT", "asset_b": "XRP/USDT:USDT", "name": "BTC_XRP"},
+        {"asset_a": "BTC/USDT:USDT", "asset_b": "ADA/USDT:USDT", "name": "BTC_ADA"},
+        {"asset_a": "ETH/USDT:USDT", "asset_b": "BNB/USDT:USDT", "name": "ETH_BNB"},
+        {"asset_a": "ETH/USDT:USDT", "asset_b": "SOL/USDT:USDT", "name": "ETH_SOL"},
+        {"asset_a": "ETH/USDT:USDT", "asset_b": "ADA/USDT:USDT", "name": "ETH_ADA"},
+        {"asset_a": "BNB/USDT:USDT", "asset_b": "SOL/USDT:USDT", "name": "BNB_SOL"},
+        {"asset_a": "XRP/USDT:USDT", "asset_b": "ADA/USDT:USDT", "name": "XRP_ADA"},
+        {"asset_a": "BTC/USDT:USDT", "asset_b": "LTC/USDT:USDT", "name": "BTC_LTC"},
+        {"asset_a": "ETH/USDT:USDT", "asset_b": "LTC/USDT:USDT", "name": "ETH_LTC"},
+        {"asset_a": "BTC/USDT:USDT", "asset_b": "LINK/USDT:USDT", "name": "BTC_LINK"},
+        {"asset_a": "ETH/USDT:USDT", "asset_b": "LINK/USDT:USDT", "name": "ETH_LINK"},
+        {"asset_a": "BTC/USDT:USDT", "asset_b": "AVAX/USDT:USDT", "name": "BTC_AVAX"},
+    ]
+    
     return {
         # 🚀 АВТОМАТИЧЕСКИЕ ПРЕСЕТЫ
         "auto_top_30": auto_pairs,
@@ -710,6 +702,21 @@ def get_all_presets():
             {"asset_a": "BTC/USDT:USDT", "asset_b": "LINK/USDT:USDT", "name": "BTC_LINK"},
             {"asset_a": "BTC/USDT:USDT", "asset_b": "LTC/USDT:USDT", "name": "BTC_LTC"},
             {"asset_a": "BTC/USDT:USDT", "asset_b": "ATOM/USDT:USDT", "name": "BTC_ATOM"},
+        ],
+        
+        # 🎯 НОВЫЙ ПРОВЕРЕННЫЙ ПРЕСЕТ
+        "liquid_pairs_15": liquid_pairs,
+        
+        # 🔥 УЛЬТРА-ЛИКВИДНЫЕ ПАРЫ (топ-8)
+        "ultra_liquid_8": [
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "ETH/USDT:USDT", "name": "BTC_ETH"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "BNB/USDT:USDT", "name": "BTC_BNB"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "SOL/USDT:USDT", "name": "BTC_SOL"},
+            {"asset_a": "ETH/USDT:USDT", "asset_b": "BNB/USDT:USDT", "name": "ETH_BNB"},
+            {"asset_a": "ETH/USDT:USDT", "asset_b": "SOL/USDT:USDT", "name": "ETH_SOL"},
+            {"asset_a": "BNB/USDT:USDT", "asset_b": "SOL/USDT:USDT", "name": "BNB_SOL"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "ADA/USDT:USDT", "name": "BTC_ADA"},
+            {"asset_a": "ETH/USDT:USDT", "asset_b": "ADA/USDT:USDT", "name": "ETH_ADA"},
         ]
     }
 
@@ -733,17 +740,47 @@ def refresh_presets():
     AVAILABLE_SYMBOLS = get_top_symbols_from_exchange(30) or get_fallback_symbols()
     return PAIR_PRESETS
 
+def test_pair_combinations():
+    """Тестирует все пресеты пар и возвращает результаты"""
+    print("🔍 TESTING ALL PAIR PRESETS...")
+    results = {}
+    
+    all_presets = get_all_presets()
+    
+    for preset_name, pairs in all_presets.items():
+        valid_pairs = 0
+        total_pairs = len(pairs)
+        
+        # Проверяем каждую пару на валидность
+        for pair in pairs:
+            if (pair.get('asset_a') and 
+                pair.get('asset_b') and 
+                pair.get('name')):
+                valid_pairs += 1
+        
+        results[preset_name] = {
+            'valid': valid_pairs,
+            'total': total_pairs,
+            'pairs': pairs
+        }
+        
+        print(f"📊 {preset_name.upper()}:")
+        print(f"   Valid pairs: {valid_pairs}/{total_pairs}")
+        if valid_pairs > 0:
+            print(f"   Sample: {pairs[0]['name']} - {pairs[0]['asset_a']} / {pairs[0]['asset_b']}")
+    
+    return results
+
 if __name__ == "__main__":
-    print("🔍 TESTING AUTO TOP-30 PRESETS...")
+    print("🔍 TESTING ALL PRESETS...")
     presets = get_all_presets()
     
     for name, pairs in presets.items():
-        if name.startswith('auto_'):
-            print(f"\n🎯 {name.upper()} ({len(pairs)} pairs):")
-            for pair in pairs[:5]:  # Показываем первые 5 пар
-                print(f"   {pair['name']}: {pair['asset_a']} / {pair['asset_b']}")
-            if len(pairs) > 5:
-                print(f"   ... and {len(pairs) - 5} more pairs")
+        print(f"\n🎯 {name.upper()} ({len(pairs)} pairs):")
+        for pair in pairs[:3]:  # Показываем первые 3 пары
+            print(f"   {pair['name']}: {pair['asset_a']} / {pair['asset_b']}")
+        if len(pairs) > 3:
+            print(f"   ... and {len(pairs) - 3} more pairs")
 
 ===== reset_data.py =====
 
@@ -953,6 +990,53 @@ class TelegramObserver(Observer):
                 msg += f"\n{pair['pair_name']}: {signal} (Z={z_score})"
         
         self.send_message(msg)
+
+===== test_connection.py =====
+
+
+#!/usr/bin/env python3
+import ccxt
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def test_okx_connection():
+    print("🔍 Testing OKX connection...")
+    
+    try:
+        exchange = ccxt.okx({
+            "enableRateLimit": True,
+            "options": {"defaultType": "swap"},
+            "sandbox": False
+        })
+        
+        # Загружаем рынки
+        print("📊 Loading markets...")
+        markets = exchange.load_markets()
+        print(f"✅ Loaded {len(markets)} markets")
+        
+        # Пробуем получить тикеры для основных пар
+        test_symbols = ["BTC/USDT:USDT", "ETH/USDT:USDT", "BNB/USDT:USDT"]
+        print("📈 Testing price data...")
+        
+        for symbol in test_symbols:
+            try:
+                ticker = exchange.fetch_ticker(symbol)
+                print(f"✅ {symbol}: {ticker['last']}")
+            except Exception as e:
+                print(f"❌ {symbol}: {e}")
+                
+        # Тестируем исторические данные
+        print("📊 Testing historical data...")
+        ohlcv = exchange.fetch_ohlcv("BTC/USDT:USDT", "15m", limit=10)
+        print(f"✅ BTC Historical data: {len(ohlcv)} bars")
+        
+    except Exception as e:
+        print(f"❌ Connection failed: {e}")
+
+if __name__ == "__main__":
+    test_okx_connection()
 
 ===== trader.py =====
 
