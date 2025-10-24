@@ -287,11 +287,12 @@ class RStylePairMonitor(Subject):
             
         z = (current_spread - mean) / std
         
-        # 🆕 ПРОВЕРКА НА NaN И INF
-        if np.isnan(z) or np.isinf(z):
+        # 🆕 ПРОВЕРКА НА NaN И INF И НЕВАЛИДНЫЕ ЗНАЧЕНИЯ
+        if (np.isnan(z) or np.isinf(z) or 
+            not isinstance(z, (int, float, np.number))):
             return None, None, None
             
-        return z, current_spread, (mean, std)
+        return float(z), current_spread, (mean, std)  # Явно преобразуем в float
 
     def trading_signal_for_pair(self, z, is_stationary, pair_name):
         """Логика сигналов для пары с ADF проверкой"""
@@ -411,11 +412,14 @@ class RStylePairMonitor(Subject):
                         status = "🚨 ABNORMAL" if abs(z) > 3.0 else "✅ NORMAL"
                         
                         if signal != "HOLD":
-                            # 🆕 БЕЗОПАСНОЕ ФОРМАТИРОВАНИЕ
+                            # 🆕 БЕЗОПАСНОЕ ФОРМАТИРОВАНИЕ - ИСПРАВЛЕННАЯ ЧАСТЬ
                             try:
-                                logger.info(f"[{current_time}] {pair['name']}: Z={z:.2f} {status} | {signal}")
-                            except (ValueError, TypeError) as format_error:
-                                logger.warning(f"[{current_time}] {pair['name']}: Z=INVALID {status} | {signal}")
+                                # Преобразуем z в float для безопасного форматирования
+                                z_float = float(z)
+                                logger.info(f"[{current_time}] {pair['name']}: Z={z_float:.2f} {status} | {signal}")
+                            except (ValueError, TypeError, Exception) as format_error:
+                                # Если возникает ошибка форматирования, используем безопасный вывод
+                                logger.info(f"[{current_time}] {pair['name']}: Z={z} {status} | {signal}")
                     
                     # Собираем данные для уведомлений
                     pair_data = {
