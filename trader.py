@@ -17,6 +17,8 @@ class OKXBasketTrader(Observer):
         self.current_positions = {}
         self.position_history = []
         self.trading_enabled = True
+        self.peak_equity = initial_balance  # 🆕 ДЛЯ РАСЧЕТА ПРОСАДКИ
+        
         self.performance_stats = {
             'total_trades': 0,
             'winning_trades': 0,
@@ -27,12 +29,6 @@ class OKXBasketTrader(Observer):
             'best_trade': 0,
             'worst_trade': 0,
             'avg_trade_duration': 0
-        }
-        self.daily_stats = {
-            'date': datetime.now().date(),
-            'daily_pnl': 0,
-            'trades_count': 0,
-            'win_rate': 0
         }
 
     def update(self, data):
@@ -99,9 +95,16 @@ class OKXBasketTrader(Observer):
         self.current_balance -= size  # Резервируем средства
 
         # Добавляем в историю
-        trade_record = position.copy()
-        trade_record['action'] = 'OPEN'
-        trade_record['timestamp'] = datetime.now().isoformat()
+        trade_record = {
+            'action': 'OPEN',
+            'pair_name': pair_name,
+            'signal': signal,
+            'size': size,
+            'entry_time': position['entry_time'],
+            'entry_z': z_score,
+            'type': position['type'],
+            'timestamp': datetime.now().isoformat()
+        }
         self.position_history.append(trade_record)
         
         logger.info(f"✅ [PAPER] OPENED: {pair_name} - {signal} | Size: ${size:.2f} | Z: {z_score:.2f}")
@@ -127,7 +130,7 @@ class OKXBasketTrader(Observer):
             'close_signal': signal,
             'size': position['size'],
             'pnl': pnl,
-            'pnl_percent': (pnl / position['size']) * 100,
+            'pnl_percent': (pnl / position['size']) * 100 if position['size'] > 0 else 0,
             'entry_time': position['entry_time'],
             'exit_time': datetime.now(),
             'entry_z': position['entry_z'],
@@ -158,8 +161,9 @@ class OKXBasketTrader(Observer):
         # Упрощенный расчет PnL на основе изменения Z-score
         current_z = self.estimate_current_z(position, current_prices)
         if current_z is not None:
-            z_change = position['entry_z'] - current_z  # PnL растет когда Z-score возвращается к 0
-            pnl = position['size'] * z_change * 0.1  # Коэффициент для реалистичного PnL
+            # PnL растет когда Z-score возвращается к 0 от точки входа
+            z_distance_from_entry = abs(position['entry_z']) - abs(current_z)
+            pnl = position['size'] * z_distance_from_entry * 0.05  # Коэффициент для реалистичного PnL
             
             position['floating_pnl'] = pnl
             position['max_floating_pnl'] = max(position['max_floating_pnl'], pnl)
@@ -172,23 +176,34 @@ class OKXBasketTrader(Observer):
             signal = position['signal']
             
             if "SHORT_" in signal and "LONG_" in signal:
-                # Пример: SHORT_BTC_LONG_ETH
                 parts = signal.split('_')
                 short_asset = parts[1] + "/USDT:USDT"
                 long_asset = parts[3] + "/USDT:USDT"
                 
                 if short_asset in entry_prices and long_asset in entry_prices:
-                    entry_ratio = entry_prices[short_asset] / entry_prices[long_asset]
-                    current_ratio = current_prices.get(short_asset, 0) / current_prices.get(long_asset, 1)
+                    entry_short_price = entry_prices[short_asset]
+                    entry_long_price = entry_prices[long_asset]
+                    current_short_price = current_prices.get(short_asset, entry_short_price)
+                    current_long_price = current_prices.get(long_asset, entry_long_price)
                     
-                    # Упрощенный расчет изменения Z-score
-                    z_change = (current_ratio - entry_ratio) / entry_ratio * 100
-                    return position['entry_z'] + z_change
+                    # Расчет изменения спреда
+                    entry_spread = entry_short_price / entry_long_price
+                    current_spread = current_short_price / current_long_price
                     
+                    spread_change_pct = (current_spread - entry_spread) / entry_spread * 100
+                    
+                    # Корректируем Z-score в зависимости от направления
+                    if "SHORT" in signal.split('_')[0]:
+                        # Для SHORT позиции: если спред уменьшился - Z-score уменьшается (хорошо)
+                        return position['entry_z'] - abs(spread_change_pct) * 0.1
+                    else:
+                        # Для LONG позиции: если спред увеличился - Z-score уменьшается (хорошо)
+                        return position['entry_z'] + abs(spread_change_pct) * 0.1
+                        
         except Exception as e:
             logger.warning(f"Error estimating Z-score: {e}")
         
-        return position['entry_z'] * 0.9  # Консервативная оценка
+        return position['entry_z'] * 0.95  # Консервативная оценка
 
     def update_performance_stats(self, close_record: dict):
         """Обновление статистики производительности"""
@@ -200,22 +215,25 @@ class OKXBasketTrader(Observer):
         if pnl > 0:
             self.performance_stats['winning_trades'] += 1
             self.performance_stats['best_trade'] = max(self.performance_stats['best_trade'], pnl)
-        else:
+        elif pnl < 0:
             self.performance_stats['losing_trades'] += 1
             self.performance_stats['worst_trade'] = min(self.performance_stats['worst_trade'], pnl)
         
-        # Обновление макс просадки
-        current_equity = self.current_balance + self.get_total_floating_pnl()
-        peak_equity = max(self.initial_balance, current_equity)
-        drawdown = (peak_equity - current_equity) / peak_equity * 100
-        self.performance_stats['max_drawdown'] = max(self.performance_stats['max_drawdown'], drawdown)
-        self.performance_stats['current_drawdown'] = drawdown
-        
-        # Средняя продолжительность сделки
-        durations = [trade['duration_minutes'] for trade in self.position_history 
-                    if trade['action'] == 'CLOSE']
-        if durations:
+        # Обновление средней продолжительности
+        closed_trades = [h for h in self.position_history if h['action'] == 'CLOSE']
+        if closed_trades:
+            durations = [trade['duration_minutes'] for trade in closed_trades]
             self.performance_stats['avg_trade_duration'] = sum(durations) / len(durations)
+
+    def update_drawdown(self):
+        """Обновление просадки"""
+        current_equity = self.get_total_equity()
+        self.peak_equity = max(self.peak_equity, current_equity)
+        
+        if self.peak_equity > 0:
+            drawdown = (self.peak_equity - current_equity) / self.peak_equity * 100
+            self.performance_stats['current_drawdown'] = drawdown
+            self.performance_stats['max_drawdown'] = max(self.performance_stats['max_drawdown'], drawdown)
 
     def get_total_exposure(self) -> float:
         """Общая экспозиция в открытых позициях"""
@@ -224,6 +242,10 @@ class OKXBasketTrader(Observer):
     def get_total_floating_pnl(self) -> float:
         """Общий плавающий PnL"""
         return sum(pos['floating_pnl'] for pos in self.current_positions.values())
+
+    def get_total_equity(self) -> float:
+        """Общая equity (баланс + плавающий PnL)"""
+        return self.current_balance + self.get_total_floating_pnl()
 
     def get_open_positions(self):
         """Открытые позиции"""
@@ -235,21 +257,29 @@ class OKXBasketTrader(Observer):
 
     def get_trading_summary(self):
         """Сводка по торговле"""
+        # Обновляем просадку
+        self.update_drawdown()
+        
         closed_trades = [h for h in self.position_history if h['action'] == 'CLOSE']
-        total_pnl = sum(trade['pnl'] for trade in closed_trades)
-        win_rate = (self.performance_stats['winning_trades'] / self.performance_stats['total_trades'] * 100 
-                   if self.performance_stats['total_trades'] > 0 else 0)
+        total_closed_pnl = sum(trade.get('pnl', 0) for trade in closed_trades)
+        
+        win_rate = 0
+        if self.performance_stats['total_trades'] > 0:
+            win_rate = (self.performance_stats['winning_trades'] / self.performance_stats['total_trades']) * 100
+        
+        total_equity = self.get_total_equity()
         
         return {
             'initial_balance': self.initial_balance,
             'current_balance': self.current_balance,
-            'total_equity': self.current_balance + self.get_total_floating_pnl(),
-            'total_pnl': total_pnl,
+            'total_equity': total_equity,
+            'total_pnl': total_closed_pnl,  # Только закрытый PnL
             'floating_pnl': self.get_total_floating_pnl(),
             'total_trades': self.performance_stats['total_trades'],
             'open_positions': len(self.current_positions),
             'win_rate': win_rate,
             'max_drawdown': self.performance_stats['max_drawdown'],
+            'current_drawdown': self.performance_stats['current_drawdown'],
             'best_trade': self.performance_stats['best_trade'],
             'worst_trade': self.performance_stats['worst_trade'],
             'avg_duration': self.performance_stats['avg_trade_duration'],
