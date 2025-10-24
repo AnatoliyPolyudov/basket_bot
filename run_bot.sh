@@ -486,42 +486,6 @@ except Exception as e:
         print_status "Deploy completed - bot running in screen"
         ;;
     
-    full-update)
-        print_info "FULL UPDATE - PULL → SNAPSHOT → PUSH"
-        cd "$BOT_DIR"
-        
-        print_info "Step 1: Pulling changes from remote..."
-        git pull origin main
-        if [ $? -eq 0 ]; then
-            print_status "Code updated successfully from remote"
-        else
-            print_error "Git pull failed"
-            exit 1
-        fi
-        
-        print_info "Step 2: Creating code snapshot..."
-        rm -f snap
-        for f in *.py; do
-            if [ -f "$f" ]; then
-                echo -e "\n\n===== $f =====\n\n" >> snap
-                cat "$f" >> snap
-            fi
-        done
-        print_status "Snapshot created: snap"
-        
-        print_info "Step 3: Pushing changes to remote..."
-        git add .
-        git commit -m "Update: $(date '+%Y-%m-%d %H:%M:%S')" || true
-        git push origin main
-        if [ $? -eq 0 ]; then
-            print_status "Changes pushed successfully to remote"
-        else
-            print_error "Git push failed"
-        fi
-        
-        print_status "Full update completed safely"
-        ;;
-    
     help|--help|-h|*)
         echo -e "${GREEN}🎯 BASKET BOT MANAGEMENT COMMANDS:${NC}"
         echo ""
@@ -560,7 +524,6 @@ except Exception as e:
         echo "  $0 git-push             - Push changes to git"
         echo "  $0 git-sync             - Sync with git (pull + push)"
         echo "  $0 create-snapshot      - Create code snapshot file"
-        echo "  $0 full-update          - Full update: PULL → SNAPSHOT → PUSH"
         echo ""
         echo -e "${BLUE}🧪 TEST COMMANDS:${NC}"
         echo "  $0 test                 - Test all presets"
