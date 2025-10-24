@@ -1,5 +1,3 @@
-# pairs_history.py
-
 class HistoryStorage:
     def __init__(self):
         self.data = {}
@@ -9,7 +7,6 @@ class HistoryStorage:
             self.data[pair_name] = []
         self.data[pair_name].append(value)
 
-        # ограничиваем длину истории
         if len(self.data[pair_name]) > 300:
             self.data[pair_name] = self.data[pair_name][-300:]
 
