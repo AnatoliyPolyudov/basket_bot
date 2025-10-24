@@ -31,6 +31,18 @@ class OKXBasketTrader(Observer):
             'avg_trade_duration': 0
         }
 
+    def get_total_exposure(self) -> float:
+        """Общая экспозиция по всем открытым позициям"""
+        return sum(pos['size'] for pos in self.current_positions.values())
+
+    def get_total_floating_pnl(self) -> float:
+        """Общий плавающий PnL"""
+        return sum(pos['floating_pnl'] for pos in self.current_positions.values())
+
+    def get_total_equity(self) -> float:
+        """Общий эквити (баланс + плавающий PnL)"""
+        return self.current_balance + self.get_total_floating_pnl()
+
     def update(self, data):
         """Автоматическая торговля по сигналам"""
         if not self.trading_enabled:
@@ -149,10 +161,83 @@ class OKXBasketTrader(Observer):
         logger.info(f"✅ [PAPER] CLOSED: {pair_name} | PnL: ${pnl:.2f} | Reason: {reason}")
         return True
 
-    # ... остальные методы без изменений (update_floating_pnl, estimate_current_z, и т.д.)
+    def update_floating_pnl(self, pair_name: str, current_prices: dict, current_time: datetime):
+        """Обновление плавающего PnL"""
+        if pair_name not in self.current_positions:
+            return
+        
+        position = self.current_positions[pair_name]
+        position['current_prices'] = current_prices.copy()
+        
+        current_z = self.estimate_current_z(position, current_prices)
+        if current_z is not None:
+            z_distance_from_entry = abs(position['entry_z']) - abs(current_z)
+            pnl = position['size'] * z_distance_from_entry * 0.05
+            
+            position['floating_pnl'] = pnl
+            position['max_floating_pnl'] = max(position['max_floating_pnl'], pnl)
+            position['min_floating_pnl'] = min(position['min_floating_pnl'], pnl)
+
+    def estimate_current_z(self, position: dict, current_prices: dict) -> float:
+        """Оценка текущего Z-score"""
+        try:
+            entry_prices = position['entry_prices']
+            signal = position['signal']
+            
+            if "SHORT_" in signal and "LONG_" in signal:
+                parts = signal.split('_')
+                short_asset = parts[1] + "/USDT:USDT"
+                long_asset = parts[3] + "/USDT:USDT"
+                
+                if short_asset in entry_prices and long_asset in entry_prices:
+                    entry_short = entry_prices[short_asset]
+                    entry_long = entry_prices[long_asset]
+                    current_short = current_prices.get(short_asset, entry_short)
+                    current_long = current_prices.get(long_asset, entry_long)
+                    
+                    entry_spread = entry_short / entry_long
+                    current_spread = current_short / current_long
+                    spread_change_pct = (current_spread - entry_spread) / entry_spread * 100
+                    
+                    if "SHORT" in signal.split('_')[0]:
+                        return position['entry_z'] - abs(spread_change_pct) * 0.1
+                    else:
+                        return position['entry_z'] + abs(spread_change_pct) * 0.1
+        except Exception as e:
+            logger.warning(f"Error estimating Z-score: {e}")
+        
+        return position['entry_z'] * 0.95
+
+    def update_performance_stats(self, close_record: dict):
+        """Обновление статистики"""
+        self.performance_stats['total_trades'] += 1
+        pnl = close_record['pnl']
+        self.performance_stats['total_pnl'] += pnl
+        
+        if pnl > 0:
+            self.performance_stats['winning_trades'] += 1
+            self.performance_stats['best_trade'] = max(self.performance_stats['best_trade'], pnl)
+        elif pnl < 0:
+            self.performance_stats['losing_trades'] += 1
+            self.performance_stats['worst_trade'] = min(self.performance_stats['worst_trade'], pnl)
+        
+        closed_trades = [h for h in self.position_history if h['action'] == 'CLOSE']
+        if closed_trades:
+            durations = [trade['duration_minutes'] for trade in closed_trades]
+            self.performance_stats['avg_trade_duration'] = sum(durations) / len(durations)
+
+    def update_drawdown(self):
+        """Обновление просадки"""
+        current_equity = self.get_total_equity()
+        self.peak_equity = max(self.peak_equity, current_equity)
+        
+        if self.peak_equity > 0:
+            drawdown = (self.peak_equity - current_equity) / self.peak_equity * 100
+            self.performance_stats['current_drawdown'] = drawdown
+            self.performance_stats['max_drawdown'] = max(self.performance_stats['max_drawdown'], drawdown)
 
     def get_trading_summary(self, current_prices_data=None):
-        """Сводка с текущими Z-score - УЛУЧШЕННАЯ ВЕРСИЯ"""
+        """Сводка с текущими Z-score"""
         self.update_drawdown()
         
         closed_trades = [h for h in self.position_history if h['action'] == 'CLOSE']
@@ -203,4 +288,45 @@ class OKXBasketTrader(Observer):
             'current_positions': list(self.current_positions.keys())
         }
 
-    # ... остальные методы без изменений ...
+    def get_open_positions(self):
+        return self.current_positions
+
+    def get_position_history(self, limit=10):
+        return self.position_history[-limit:] if self.position_history else []
+
+    def export_trading_log(self, filename=None):
+        if not filename:
+            filename = f"trading_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        
+        log_data = {
+            'export_time': datetime.now().isoformat(),
+            'summary': self.get_trading_summary(),
+            'performance_stats': self.performance_stats,
+            'position_history': self.position_history,
+            'current_positions': self.current_positions
+        }
+        
+        try:
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(log_data, f, indent=2, default=str)
+            logger.info(f"✅ Trading log exported to {filename}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Error exporting log: {e}")
+            return False
+
+    def enable_trading(self):
+        self.trading_enabled = True
+        logger.info("✅ AUTO TRADING ENABLED")
+
+    def disable_trading(self):
+        self.trading_enabled = False
+        logger.info("🚫 AUTO TRADING DISABLED")
+
+    def close_all_positions(self, reason="Manual close all"):
+        closed_count = 0
+        for pair_name in list(self.current_positions.keys()):
+            if self.close_position("CLOSE_ALL", pair_name, reason):
+                closed_count += 1
+        logger.info(f"✅ Closed {closed_count} positions")
+        return closed_count
