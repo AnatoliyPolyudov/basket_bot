@@ -1,4 +1,7 @@
-ccxt==4.1.76
-numpy==1.24.3
+ccxt==4.2.78
 pandas==2.0.3
+numpy==1.24.3
+statsmodels==0.14.1
+scipy==1.11.3
 requests==2.31.0
+python-dotenv==1.0.0
