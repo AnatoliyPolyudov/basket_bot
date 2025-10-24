@@ -204,8 +204,7 @@ def refresh_presets():
     AVAILABLE_SYMBOLS = get_top_symbols_from_exchange(30) or get_fallback_symbols()
     return PAIR_PRESETS
 
-if __name__ == "__main__":
-    def test_pair_combinations():
+def test_pair_combinations():
     """Тестирует все пресеты пар и возвращает результаты"""
     print("🔍 TESTING ALL PAIR PRESETS...")
     results = {}
@@ -235,7 +234,8 @@ if __name__ == "__main__":
             print(f"   Sample: {pairs[0]['name']} - {pairs[0]['asset_a']} / {pairs[0]['asset_b']}")
     
     return results
-    
+
+if __name__ == "__main__":
     print("🔍 TESTING AUTO TOP-30 PRESETS...")
     presets = get_all_presets()
     
