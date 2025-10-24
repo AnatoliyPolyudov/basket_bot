@@ -9,7 +9,7 @@ import logging
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from monitor import SimpleBasketMonitor
+from monitor import RStylePairMonitor  # 🆕 ИМПОРТИРУЕМ НОВЫЙ КЛАСС
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,16 +23,17 @@ def main():
     print("=" * 60)
     
     try:
-        monitor = SimpleBasketMonitor()
+        monitor = RStylePairMonitor()  # 🆕 СОЗДАЕМ НОВЫЙ МОНИТОР
         print("📊 Starting complete data reset...")
         
         if monitor.complete_data_reset():
             print("✅ SUCCESS: Data reset completed successfully!")
             print("🎯 You can now run: python monitor.py")
             print("")
-            print("📈 Expected results after reset:")
-            print("   - Z-score: ±0.5 to ±2.0 (normal range)")
-            print("   - Accurate trading signals")
+            print("📈 R-STYLE PAIR TRADING READY:")
+            print("   - 4 trading pairs (1vs1)")
+            print("   - ADF tests on 120/90/60 bars") 
+            print("   - Z-score on 35-bar sliding window")
         else:
             print("❌ FAILED: Data reset failed!")
             
