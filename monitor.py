@@ -214,6 +214,10 @@ class RStylePairMonitor(Subject):
             
         z = (current_spread - mean) / std
         
+        # 🆕 ПРОВЕРКА НА NaN И INF
+        if np.isnan(z) or np.isinf(z):
+            return None, None, None
+            
         return z, current_spread, (mean, std)
 
     def trading_signal_for_pair(self, z, is_stationary, pair_name):
@@ -334,8 +338,11 @@ class RStylePairMonitor(Subject):
                         status = "🚨 ABNORMAL" if abs(z) > 3.0 else "✅ NORMAL"
                         
                         if signal != "HOLD":
-                            # 🆕 ИСПРАВЛЕН ФОРМАТ ВЫВОДА - ПРОВЕРКА НА None
-                            logger.info(f"[{current_time}] {pair['name']}: Z={z:.2f} {status} | {signal}")
+                            # 🆕 БЕЗОПАСНОЕ ФОРМАТИРОВАНИЕ
+                            try:
+                                logger.info(f"[{current_time}] {pair['name']}: Z={z:.2f} {status} | {signal}")
+                            except (ValueError, TypeError) as format_error:
+                                logger.warning(f"[{current_time}] {pair['name']}: Z=INVALID {status} | {signal}")
                     
                     # Собираем данные для уведомлений
                     pair_data = {
