@@ -370,7 +370,10 @@ class RStylePairMonitor(Subject):
                 time.sleep(60)
 
 
-def telegram_polling(trader):
+def telegram_polling(trader, telegram_observer):
+    """
+    Обновленная функция polling с поддержкой управления
+    """
     TELEGRAM_BOT_TOKEN = "8436652130:AAF6On0GJtRHfMZyqD3mpM57eXZfWofJeng"
     offset = None
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates"
@@ -383,7 +386,8 @@ def telegram_polling(trader):
             for update in updates:
                 if "callback_query" in update:
                     data = update["callback_query"]["data"]
-                    handle_callback(data, trader)
+                    # 🆕 ПЕРЕДАЕМ telegram_observer В handle_callback
+                    handle_callback(data, trader, telegram_observer)
                 offset = update["update_id"] + 1
             time.sleep(1)
         except Exception as e:
@@ -424,7 +428,8 @@ def main():
     telegram_observer = TelegramObserver(trader=trader)
     monitor.attach(telegram_observer)
 
-    polling_thread = threading.Thread(target=telegram_polling, args=(trader,), daemon=True)
+    # 🆕 ОБНОВЛЕННЫЙ ВЫЗОВ С telegram_observer
+    polling_thread = threading.Thread(target=telegram_polling, args=(trader, telegram_observer), daemon=True)
     polling_thread.start()
 
     monitor.run(interval_minutes=1)
