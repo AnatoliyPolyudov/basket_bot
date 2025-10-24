@@ -87,11 +87,14 @@ from statsmodels.tsa.stattools import adfuller
 import warnings
 warnings.filterwarnings('ignore')
 
+# 🎯 ИМПОРТИРУЕМ КОНФИГУРАЦИЮ ПАР
+from pairs_config import get_preset, PAIR_PRESETS
+
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 class RStylePairMonitor(Subject):
-    def __init__(self):
+    def __init__(self, pair_preset="auto_top_30"):
         super().__init__()
         self.exchange = ccxt.okx({
             "enableRateLimit": True,
@@ -99,13 +102,13 @@ class RStylePairMonitor(Subject):
             "sandbox": False
         })
         
-        # 🎯 ПАРЫ КАК В R-ПРОЕКТЕ (1vs1)
-        self.trading_pairs = [
-            {"asset_a": "ETH/USDT:USDT", "asset_b": "BNB/USDT:USDT", "name": "ETH_BNB"},
-            {"asset_a": "BTC/USDT:USDT", "asset_b": "ETH/USDT:USDT", "name": "BTC_ETH"},
-            {"asset_a": "SOL/USDT:USDT", "asset_b": "DOT/USDT:USDT", "name": "SOL_DOT"},
-            {"asset_a": "XRP/USDT:USDT", "asset_b": "ADA/USDT:USDT", "name": "XRP_ADA"},
-        ]
+        # 🎯 ЗАГРУЖАЕМ ПАРЫ ИЗ КОНФИГА
+        self.trading_pairs = get_preset(pair_preset)
+        if not self.trading_pairs:
+            logger.error(f"❌ Preset '{pair_preset}' not found! Using default.")
+            self.trading_pairs = get_preset("auto_top_30")
+        
+        logger.info(f"🎯 Loaded {len(self.trading_pairs)} pairs from preset: {pair_preset}")
         
         # Все уникальные символы для загрузки данных
         self.all_symbols = set()
@@ -118,24 +121,26 @@ class RStylePairMonitor(Subject):
         self.timeframe = "15m"
         self.lookback_bars = 672
         self.data_loaded = False
-        self.window_bars = 35  # Скользящее окно для Z-score
+        self.window_bars = 35
         
-        # 🎯 ADF НАСТРОЙКИ КАК В R
-        self.adf_lookbacks = [120, 90, 60]  # 120, 90, 60 баров
-        self.adf_critical_value = -2.58  # 10% уровень значимости
+        # ADF настройки
+        self.adf_lookbacks = [60, 40, 20]
+        self.adf_critical_value = -2.58
         
-        # 🎯 Храним состояние для каждой пары
+        # Храним состояние для каждой пары
         self.pair_states = {}
         for pair in self.trading_pairs:
             self.pair_states[pair["name"]] = {
                 'current_signal': 'HOLD',
                 'adf_passed': False,
-                'position_open': False
+                'position_open': False,
+                'data_loaded': False
             }
         
     def complete_data_reset(self):
         """ПОЛНЫЙ СБРОС всех данных и перезагрузка"""
         logger.info("🗑️ COMPLETE DATA RESET INITIATED...")
+        logger.info(f"🎯 Loading data for {len(self.all_symbols)} symbols and {len(self.trading_pairs)} pairs")
         
         self.historical_data = {}
         self.data_loaded = False
@@ -144,11 +149,20 @@ class RStylePairMonitor(Subject):
             logger.info("✅ COMPLETE RESET SUCCESSFUL - Fresh data loaded")
             
             # Тестируем ADF для каждой пары
+            successful_pairs = 0
             for pair in self.trading_pairs:
                 spread_data = self.get_pair_historical_spread(pair)
                 if spread_data is not None:
                     adf_passed = self.calculate_adf_test(spread_data)
-                    logger.info(f"📊 {pair['name']} ADF: {'PASSED' if adf_passed else 'FAILED'}")
+                    self.pair_states[pair["name"]]['data_loaded'] = True
+                    self.pair_states[pair["name"]]['adf_passed'] = adf_passed
+                    if adf_passed:
+                        successful_pairs += 1
+                    logger.info(f"📊 {pair['name']}: ADF {'PASSED' if adf_passed else 'FAILED'}")
+                else:
+                    logger.warning(f"❌ {pair['name']}: No historical data")
+            
+            logger.info(f"🎯 Successfully initialized {successful_pairs}/{len(self.trading_pairs)} pairs")
             return True
         else:
             logger.error("❌ COMPLETE RESET FAILED")
@@ -160,7 +174,7 @@ class RStylePairMonitor(Subject):
             logger.info("📊 Historical data already loaded, skipping...")
             return True
             
-        logger.info("🔄 FETCHING FRESH HISTORICAL DATA FROM OKX...")
+        logger.info(f"🔄 FETCHING DATA FOR {len(self.all_symbols)} SYMBOLS FROM OKX...")
         
         success_count = 0
         for symbol in self.all_symbols:
@@ -169,29 +183,33 @@ class RStylePairMonitor(Subject):
                 if ohlcv and len(ohlcv) >= 100:
                     self.historical_data[symbol] = [c[4] for c in ohlcv]
                     success_count += 1
-                    logger.info(f"✅ Loaded {len(self.historical_data[symbol])} bars for {symbol}")
+                    logger.info(f"✅ {symbol}: {len(self.historical_data[symbol])} bars")
                 else:
                     logger.warning(f"❌ No data for {symbol}")
             except Exception as e:
                 logger.warning(f"❌ Error loading {symbol}: {e}")
         
-        if len(self.historical_data) >= 4:
+        if success_count >= 10:  # Минимум 10 символов для работы
             self.data_loaded = True
-            logger.info(f"🎯 Successfully loaded {success_count} symbols")
+            logger.info(f"🎯 Successfully loaded {success_count}/{len(self.all_symbols)} symbols")
             return True
         else:
-            logger.error(f"❌ Not enough valid symbols: {len(self.historical_data)}/4")
+            logger.error(f"❌ Not enough valid symbols: {success_count}/{len(self.all_symbols)}")
             return False
 
     def get_pair_historical_spread(self, pair):
         """Исторический спред для конкретной пары"""
-        if pair["asset_a"] not in self.historical_data or pair["asset_b"] not in self.historical_data:
+        if pair["asset_a"] not in self.historical_data:
+            return None
+        if pair["asset_b"] not in self.historical_data:
             return None
             
-        min_len = min(len(self.historical_data[pair["asset_a"]]), 
-                      len(self.historical_data[pair["asset_b"]]))
+        len_a = len(self.historical_data[pair["asset_a"]])
+        len_b = len(self.historical_data[pair["asset_b"]])
         
-        if min_len < 100:
+        min_len = min(len_a, len_b)
+        
+        if min_len < max(self.adf_lookbacks):
             return None
             
         prices_a = np.array(self.historical_data[pair["asset_a"]][-min_len:])
@@ -201,12 +219,11 @@ class RStylePairMonitor(Subject):
         return spread
 
     def calculate_adf_test(self, spread_data):
-        """ADF тест на стационарность как в R-проекте"""
+        """ADF тест на стационарность"""
         if spread_data is None or len(spread_data) < max(self.adf_lookbacks):
             return False
         
         try:
-            # 🎯 ТОЧНАЯ КОПИЯ ЛОГИКИ ИЗ R-КОДА
             adf_passed = True
             
             for lookback in self.adf_lookbacks:
@@ -214,14 +231,10 @@ class RStylePairMonitor(Subject):
                     adf_passed = False
                     break
                     
-                # Берем данные для теста (скользящее окно)
                 test_data = spread_data[-lookback:]
-                
-                # ADF тест с параметрами как в R
                 adf_result = adfuller(test_data, maxlag=1, regression='c', autolag=None)
-                adf_statistic = adf_result[0]  # ADF статистика
+                adf_statistic = adf_result[0]
                 
-                # Проверка как в R: adf_statistic <= criticalValue
                 if adf_statistic > self.adf_critical_value:
                     adf_passed = False
                     break
@@ -229,7 +242,7 @@ class RStylePairMonitor(Subject):
             return adf_passed
             
         except Exception as e:
-            logger.warning(f"❌ ADF test error for pair: {e}")
+            logger.warning(f"❌ ADF test error: {e}")
             return False
 
     def calculate_pair_spread(self, pair, current_prices):
@@ -256,7 +269,6 @@ class RStylePairMonitor(Subject):
         if historical_spread is None or len(historical_spread) < self.window_bars:
             return None, None, None
         
-        # Используем скользящее окно
         window_data = historical_spread[-self.window_bars:]
         
         mean = np.mean(window_data)
@@ -274,7 +286,6 @@ class RStylePairMonitor(Subject):
         if z is None:
             return "NO DATA"
             
-        # 🎯 НЕ ТОРГУЕМ ЕСЛИ СПРЕД НЕ СТАЦИОНАРЕН
         if not is_stationary:
             return "NO TRADE - NOT STATIONARY"
             
@@ -291,17 +302,36 @@ class RStylePairMonitor(Subject):
     def get_current_prices(self):
         """Получение текущих цен для всех символов"""
         try:
-            tickers = self.exchange.fetch_tickers(self.all_symbols)
-            prices = {}
-            
-            for symbol in self.all_symbols:
-                if symbol in tickers and tickers[symbol].get("last") is not None:
-                    prices[symbol] = tickers[symbol]["last"]
-                else:
-                    logger.warning(f"⚠️ Missing price for {symbol}")
-                    return None
+            # Разбиваем на группы по 10 символов чтобы избежать лимитов
+            all_prices = {}
+            for i in range(0, len(self.all_symbols), 10):
+                symbols_batch = self.all_symbols[i:i+10]
+                try:
+                    tickers = self.exchange.fetch_tickers(symbols_batch)
                     
-            return prices
+                    for symbol in symbols_batch:
+                        if symbol in tickers and tickers[symbol].get("last") is not None:
+                            all_prices[symbol] = tickers[symbol]["last"]
+                        else:
+                            logger.warning(f"⚠️ Missing price for {symbol}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Batch price error: {e}")
+                    # Продолжаем с другими батчами
+                
+                time.sleep(0.2)  # Пауза между запросами
+            
+            # Проверяем что загрузились все необходимые цены
+            required_symbols = set()
+            for pair in self.trading_pairs:
+                required_symbols.add(pair["asset_a"])
+                required_symbols.add(pair["asset_b"])
+            
+            missing_prices = required_symbols - set(all_prices.keys())
+            if missing_prices:
+                logger.warning(f"⚠️ Missing prices for: {missing_prices}")
+                return None
+                    
+            return all_prices
         except Exception as e:
             logger.warning(f"❌ Error fetching prices: {e}")
             return None
@@ -310,6 +340,7 @@ class RStylePairMonitor(Subject):
         """Основной цикл мониторинга для всех пар"""
         logger.info("🚀 Starting R-STYLE PAIR MONITOR...")
         logger.info(f"🎯 Monitoring {len(self.trading_pairs)} trading pairs")
+        logger.info(f"🎯 {len(self.all_symbols)} unique symbols")
         logger.info(f"🎯 ADF Lookbacks: {self.adf_lookbacks} bars")
         logger.info(f"🎯 Z-score Window: {self.window_bars} bars")
         logger.info(f"🎯 R-STYLE THRESHOLDS: ENTER ±1.0, EXIT ±0.5")
@@ -338,8 +369,14 @@ class RStylePairMonitor(Subject):
                 
                 # 🎯 ОБРАБАТЫВАЕМ КАЖДУЮ ПАРУ НЕЗАВИСИМО
                 all_pair_data = []
+                active_pairs_count = 0
+                trading_signals_count = 0
                 
                 for pair in self.trading_pairs:
+                    # Пропускаем пары без данных
+                    if not self.pair_states[pair["name"]]['data_loaded']:
+                        continue
+                        
                     # Расчет Z-score и ADF для пары
                     z, spread, stats = self.calculate_zscore_for_pair(pair, prices)
                     historical_spread = self.get_pair_historical_spread(pair)
@@ -351,13 +388,18 @@ class RStylePairMonitor(Subject):
                     self.pair_states[pair["name"]]['adf_passed'] = is_stationary
                     self.pair_states[pair["name"]]['current_signal'] = signal
                     
-                    # Логирование для пары
-                    if z is not None:
-                        adf_status = "STATIONARY" if is_stationary else "NON-STATIONARY"
+                    if is_stationary:
+                        active_pairs_count += 1
+                    if signal not in ["HOLD", "NO DATA", "NO TRADE - NOT STATIONARY"]:
+                        trading_signals_count += 1
+                    
+                    # Логирование только для пар с данными и сигналами
+                    if z is not None and is_stationary:
+                        adf_status = "STATIONARY"
                         status = "🚨 ABNORMAL" if abs(z) > 3.0 else "✅ NORMAL"
                         
-                        logger.info(f"[{current_time}] {pair['name']}: Z={z:5.2f} {status} | ADF: {adf_status}")
-                        logger.info(f"   Signal: {signal} | Spread: {spread:.3f}")
+                        if signal != "HOLD":
+                            logger.info(f"[{current_time}] {pair['name']}: Z={z:5.2f} {status} | {signal}")
                     
                     # Собираем данные для уведомлений
                     pair_data = {
@@ -373,16 +415,19 @@ class RStylePairMonitor(Subject):
                     }
                     all_pair_data.append(pair_data)
                 
+                # Сводка по итерации
+                logger.info(f"📊 [{current_time}] Active: {active_pairs_count}/{len(self.trading_pairs)} | Signals: {trading_signals_count}")
+                
                 # Уведомляем наблюдателей
                 report_data = {
                     "time": datetime.utcnow(),
                     "pairs_data": all_pair_data,
                     "total_pairs": len(self.trading_pairs),
-                    "active_pairs": len([p for p in all_pair_data if p['adf_passed']])
+                    "active_pairs": active_pairs_count,
+                    "trading_signals": trading_signals_count
                 }
                 self.notify(report_data)
                 
-                logger.info("-" * 60)  # Разделитель между итерациями
                 time.sleep(interval_minutes * 60)
                 
             except KeyboardInterrupt:
@@ -415,7 +460,28 @@ def telegram_polling(trader):
 
 
 def main():
-    monitor = RStylePairMonitor()
+    # 🎯 ВОЗМОЖНОСТЬ ВЫБОРА ПРЕСЕТА ЧЕРЕЗ АРГУМЕНТЫ
+    import argparse
+    
+    parser = argparse.ArgumentParser(description='R-Style Pair Trading Monitor')
+    parser.add_argument('--preset', type=str, default='auto_top_30', 
+                       help='Pair preset: auto_top_30, auto_top_20, auto_top_15, auto_btc_focused, top_10_btc_pairs')
+    parser.add_argument('--test', action='store_true', help='Test pair configurations')
+    
+    args = parser.parse_args()
+    
+    if args.test:
+        from pairs_config import test_pair_combinations
+        print("🔍 TESTING ALL PAIR PRESETS...")
+        results = test_pair_combinations()
+        
+        for preset, data in results.items():
+            print(f"\n📊 {preset.upper()}:")
+            print(f"   Valid pairs: {data['valid']}/{data['total']}")
+        sys.exit(0)
+    
+    # Запуск монитора с выбранным пресетом
+    monitor = RStylePairMonitor(pair_preset=args.preset)
     monitor.attach(ConsoleObserver())
 
     trader = OKXBasketTrader(paper_trading=True, max_exposure=1000)
@@ -459,6 +525,225 @@ class Subject:
         for observer in self._observers:
             observer.update(data)
 
+
+===== pairs_config.py =====
+
+
+#!/usr/bin/env python3
+"""
+КОНФИГУРАЦИЯ ТОРГОВЫХ ПАР - АВТОМАТИЧЕСКАЯ ЗАГРУЗКА ТОП-30
+"""
+
+import ccxt
+import json
+from typing import List, Dict
+import time
+
+def get_top_symbols_from_exchange(limit=30):
+    """Автоматически получает топовые символы с OKX по объему"""
+    try:
+        exchange = ccxt.okx({
+            "enableRateLimit": True,
+            "options": {"defaultType": "swap"},
+            "sandbox": False
+        })
+        
+        print(f"🔍 Loading top {limit} symbols from OKX...")
+        markets = exchange.fetch_markets()
+        
+        # Фильтруем USDT своп пары
+        usdt_pairs = []
+        for market in markets:
+            if (market['quote'] == 'USDT' and 
+                market['type'] == 'swap' and 
+                market['active'] and
+                '/USDT:USDT' in market['symbol']):
+                
+                # Получаем объем из информации о рынке
+                info = market.get('info', {})
+                volume_24h = float(info.get('volCcy24h', 0))  # Объем в USDT
+                
+                if volume_24h > 0:  # Только пары с объемом
+                    usdt_pairs.append({
+                        'symbol': market['symbol'],
+                        'volume': volume_24h,
+                        'base': market['base']
+                    })
+        
+        # Сортируем по объему (по убыванию)
+        usdt_pairs.sort(key=lambda x: x['volume'], reverse=True)
+        
+        # Берем топ лимит
+        top_symbols = [pair['symbol'] for pair in usdt_pairs[:limit]]
+        
+        # Логируем топ-10 для информации
+        print("📈 TOP 10 SYMBOLS BY VOLUME:")
+        for i, pair in enumerate(usdt_pairs[:10], 1):
+            print(f"   {i:2d}. {pair['symbol']} - ${pair['volume']:,.0f}")
+        
+        print(f"✅ Successfully loaded {len(top_symbols)} symbols")
+        return top_symbols
+        
+    except Exception as e:
+        print(f"❌ Error loading symbols from exchange: {e}")
+        # Fallback на основные пары
+        return get_fallback_symbols()
+
+def get_fallback_symbols():
+    """Резервные символы если не удалось загрузить с биржи"""
+    return [
+        "BTC/USDT:USDT", "ETH/USDT:USDT", "BNB/USDT:USDT", "SOL/USDT:USDT",
+        "XRP/USDT:USDT", "ADA/USDT:USDT", "AVAX/USDT:USDT", "DOT/USDT:USDT",
+        "LINK/USDT:USDT", "LTC/USDT:USDT", "ATOM/USDT:USDT", "TRX/USDT:USDT",
+        "XLM/USDT:USDT", "BCH/USDT:USDT", "FIL/USDT:USDT", "ETC/USDT:USDT",
+        "EOS/USDT:USDT", "AAVE/USDT:USDT", "ALGO/USDT:USDT", "XTZ/USDT:USDT",
+        "XMR/USDT:USDT", "DASH/USDT:USDT", "ZEC/USDT:USDT", "COMP/USDT:USDT",
+        "DOGE/USDT:USDT", "MATIC/USDT:USDT", "NEAR/USDT:USDT", "SAND/USDT:USDT",
+        "MANA/USDT:USDT", "ENJ/USDT:USDT"
+    ]
+
+def generate_top_30_pairs(symbols: List[str]):
+    """Генерирует топ-30 торговых пар"""
+    pairs = []
+    
+    if not symbols:
+        symbols = get_fallback_symbols()
+    
+    # Убедимся что BTC и ETH есть в списке
+    essential_symbols = ["BTC/USDT:USDT", "ETH/USDT:USDT"]
+    for essential in essential_symbols:
+        if essential not in symbols:
+            symbols.insert(0, essential)
+    
+    # 1. BTC пары с топ-10 альтами (кроме себя)
+    btc_symbol = "BTC/USDT:USDT"
+    btc_counter = 0
+    for symbol in symbols:
+        if symbol != btc_symbol and btc_counter < 10:
+            alt_name = symbol.split('/')[0]
+            pairs.append({
+                "asset_a": btc_symbol,
+                "asset_b": symbol,
+                "name": f"BTC_{alt_name}",
+                "type": "btc_pair"
+            })
+            btc_counter += 1
+    
+    # 2. ETH пары с топ-8 альтами (кроме BTC и себя)
+    eth_symbol = "ETH/USDT:USDT"
+    eth_counter = 0
+    for symbol in symbols:
+        if (symbol != eth_symbol and 
+            symbol != btc_symbol and 
+            not symbol.startswith('BTC/') and 
+            eth_counter < 8):
+            alt_name = symbol.split('/')[0]
+            pairs.append({
+                "asset_a": eth_symbol,
+                "asset_b": symbol,
+                "name": f"ETH_{alt_name}",
+                "type": "eth_pair"
+            })
+            eth_counter += 1
+    
+    # 3. Пары между топ-12 альтами (исключая BTC/ETH)
+    alt_symbols = [s for s in symbols if not s.startswith('BTC/') and not s.startswith('ETH/')][:12]
+    alt_pairs_added = 0
+    
+    for i in range(len(alt_symbols)):
+        for j in range(i + 1, len(alt_symbols)):
+            if alt_pairs_added >= 12:  # Ограничиваем количество
+                break
+                
+            asset_a = alt_symbols[i]
+            asset_b = alt_symbols[j]
+            name_a = asset_a.split('/')[0]
+            name_b = asset_b.split('/')[0]
+            
+            pairs.append({
+                "asset_a": asset_a,
+                "asset_b": asset_b,
+                "name": f"{name_a}_{name_b}",
+                "type": "alt_pair"
+            })
+            alt_pairs_added += 1
+        
+        if alt_pairs_added >= 12:
+            break
+    
+    # Обрезаем до 30 пар если получилось больше
+    pairs = pairs[:30]
+    
+    print(f"✅ Generated {len(pairs)} trading pairs:")
+    print(f"   - {btc_counter} BTC pairs")
+    print(f"   - {eth_counter} ETH pairs") 
+    print(f"   - {alt_pairs_added} ALT pairs")
+    
+    return pairs
+
+def get_current_top_30_pairs():
+    """Основная функция - возвращает текущие топ-30 пар"""
+    top_symbols = get_top_symbols_from_exchange(35)  # Берем немного больше на всякий случай
+    return generate_top_30_pairs(top_symbols)
+
+# 🎯 ПРЕСЕТЫ (автоматические + ручные для совместимости)
+def get_all_presets():
+    """Все доступные пресеты"""
+    auto_pairs = get_current_top_30_pairs()
+    
+    return {
+        # 🚀 АВТОМАТИЧЕСКИЕ ПРЕСЕТЫ
+        "auto_top_30": auto_pairs,
+        "auto_top_20": auto_pairs[:20],
+        "auto_top_15": auto_pairs[:15],
+        "auto_btc_focused": [p for p in auto_pairs if p["asset_a"] == "BTC/USDT:USDT"][:15],
+        
+        # 📋 РУЧНЫЕ ПРЕСЕТЫ (для совместимости)
+        "top_10_btc_pairs": [
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "ETH/USDT:USDT", "name": "BTC_ETH"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "BNB/USDT:USDT", "name": "BTC_BNB"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "SOL/USDT:USDT", "name": "BTC_SOL"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "XRP/USDT:USDT", "name": "BTC_XRP"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "ADA/USDT:USDT", "name": "BTC_ADA"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "AVAX/USDT:USDT", "name": "BTC_AVAX"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "DOT/USDT:USDT", "name": "BTC_DOT"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "LINK/USDT:USDT", "name": "BTC_LINK"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "LTC/USDT:USDT", "name": "BTC_LTC"},
+            {"asset_a": "BTC/USDT:USDT", "asset_b": "ATOM/USDT:USDT", "name": "BTC_ATOM"},
+        ]
+    }
+
+# Глобальные переменные для обратной совместимости
+PAIR_PRESETS = get_all_presets()
+AVAILABLE_SYMBOLS = get_top_symbols_from_exchange(30) or get_fallback_symbols()
+
+def get_preset(preset_name):
+    """Получить пресет по имени"""
+    all_presets = get_all_presets()
+    return all_presets.get(preset_name, [])
+
+def list_available_presets():
+    """Список всех доступных пресетов"""
+    return list(get_all_presets().keys())
+
+def refresh_presets():
+    """Принудительное обновление пресетов с биржи"""
+    global PAIR_PRESETS, AVAILABLE_SYMBOLS
+    PAIR_PRESETS = get_all_presets()
+    AVAILABLE_SYMBOLS = get_top_symbols_from_exchange(30) or get_fallback_symbols()
+    return PAIR_PRESETS
+
+if __name__ == "__main__":
+    print("🔍 TESTING AUTO TOP-30 PRESETS...")
+    presets = get_all_presets()
+    
+    for name, pairs in presets.items():
+        if name.startswith('auto_'):
+            print(f"\n🎯 {name.upper()} ({len(pairs)} pairs):")
+            for pair in pairs[:5]:  # Показываем первые 5 пар
+                print(f"   {pair['name']}: {pair['asset_a']} / {pair['asset_b']}")
+            if len(pairs) > 5:
+                print(f"   ... and {len(pairs) - 5} more pairs")
 
 ===== reset_data.py =====
 
