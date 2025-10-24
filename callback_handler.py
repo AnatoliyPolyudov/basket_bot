@@ -5,7 +5,7 @@ def handle_callback(callback_data, trader, telegram_observer=None):
     """
     try:
         # 🆕 ОБРАБАТЫВАЕМ КОМАНДЫ УПРАВЛЕНИЯ
-        if callback_data in ['SUMMARY', 'CLOSE_ALL', 'ENABLE_AUTO', 'DISABLE_AUTO']:
+        if callback_data in ['SUMMARY', 'CLOSE_ALL', 'ENABLE_AUTO', 'DISABLE_AUTO', 'EXPORT_LOG']:
             if telegram_observer:
                 telegram_observer.handle_management_callback(callback_data, trader)
             return
