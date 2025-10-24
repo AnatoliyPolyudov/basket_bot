@@ -17,6 +17,7 @@ class TelegramObserver(Observer):
         self.last_status_message = None
 
     def send_message(self, text, buttons=None):
+        """Отправка сообщения в Telegram"""
         url = f"https://api.telegram.org/bot{self.token}/sendMessage"
         payload = {
             'chat_id': self.chat_id,
@@ -27,12 +28,22 @@ class TelegramObserver(Observer):
             payload['reply_markup'] = json.dumps({'inline_keyboard': buttons})
         try:
             response = requests.post(url, data=payload, timeout=10)
-            return True
+            return response.status_code == 200
         except Exception as e:
             print(f"❌ Telegram send failed: {e}")
             return False
 
+    def safe_format_number(self, value, default=0, precision=2):
+        """Безопасное форматирование чисел"""
+        try:
+            if value is None:
+                return default
+            return round(float(value), precision)
+        except (ValueError, TypeError):
+            return default
+
     def update(self, data):
+        """Обновление данных от монитора"""
         pairs_data = data.get('pairs_data', [])
         current_time = datetime.now()
         
@@ -59,7 +70,7 @@ class TelegramObserver(Observer):
         messages_to_send = []
         
         for pair_data in pairs_data:
-            pair_name = pair_data['pair_name']
+            pair_name = pair_data.get('pair_name', 'UNKNOWN')
             current_signal = pair_data.get('signal', '')
             current_z = pair_data.get('z', 0)
             adf_passed = pair_data.get('adf_passed', False)
@@ -70,6 +81,7 @@ class TelegramObserver(Observer):
             
             should_send = False
             
+            # Логика отправки сигналов
             if (current_signal != self.last_signals[pair_name] and 
                 current_signal not in ["HOLD", "NO DATA", "NO TRADE - NOT STATIONARY"]):
                 should_send = True
@@ -82,21 +94,13 @@ class TelegramObserver(Observer):
                 should_send = True
             
             if should_send:
-                asset_a = pair_data['asset_a'].split('/')[0]
-                asset_b = pair_data['asset_b'].split('/')[0]
+                asset_a = pair_data.get('asset_a', 'UNKNOWN').split('/')[0]
+                asset_b = pair_data.get('asset_b', 'UNKNOWN').split('/')[0]
                 
                 # Безопасное форматирование
-                try:
-                    z_score = round(float(current_z), 2) if current_z is not None else 0
-                except (ValueError, TypeError):
-                    z_score = current_z
-                
-                try:
-                    price_a = round(float(pair_data.get('price_a', 0)), 2) if pair_data.get('price_a') is not None else 0
-                    price_b = round(float(pair_data.get('price_b', 0)), 2) if pair_data.get('price_b') is not None else 0
-                except (ValueError, TypeError):
-                    price_a = pair_data.get('price_a', 0)
-                    price_b = pair_data.get('price_b', 0)
+                z_score = self.safe_format_number(current_z, precision=2)
+                price_a = self.safe_format_number(pair_data.get('price_a', 0), precision=2)
+                price_b = self.safe_format_number(pair_data.get('price_b', 0), precision=2)
                 
                 formatted_signal = current_signal
                 if "SHORT_" in current_signal and "LONG_" in current_signal:
@@ -118,10 +122,11 @@ class TelegramObserver(Observer):
                     'pair_name': pair_name
                 })
             
+            # Обновляем последние значения
             self.last_signals[pair_name] = current_signal
             self.last_zs[pair_name] = current_z
         
-        # Отправка сигналов
+        # Отправка собранных сигналов
         for msg_data in messages_to_send:
             buttons = None
             signal = msg_data['signal']
@@ -147,29 +152,52 @@ class TelegramObserver(Observer):
         """Детальный статус Paper Trading"""
         try:
             if trader is None:
+                print("❌ Trader is None in send_detailed_status")
                 return False
                 
             summary = trader.get_trading_summary(data)
+            if not summary:
+                print("❌ Empty summary from trader")
+                return False
             
+            # Безопасное форматирование всех числовых значений
+            initial_balance = self.safe_format_number(summary.get('initial_balance', 0))
+            total_equity = self.safe_format_number(summary.get('total_equity', 0))
+            total_pnl = self.safe_format_number(summary.get('total_pnl', 0))
+            floating_pnl = self.safe_format_number(summary.get('floating_pnl', 0))
+            total_trades = summary.get('total_trades', 0)
+            open_positions = summary.get('open_positions', 0)
+            win_rate = self.safe_format_number(summary.get('win_rate', 0), precision=1)
+            max_drawdown = self.safe_format_number(summary.get('max_drawdown', 0), precision=1)
+            
+            # Основное сообщение со статусом
             main_msg = (
                 f"📈 <b>PAPER TRADING STATUS</b>\n"
-                f"Initial: ${summary.get('initial_balance', 0):.2f}\n"
-                f"Equity: ${summary.get('total_equity', 0):.2f}\n"
-                f"Closed PnL: ${summary.get('total_pnl', 0):.2f}\n"
-                f"Floating PnL: ${summary.get('floating_pnl', 0):.2f}\n"
-                f"Trades: {summary.get('total_trades', 0)}\n"
-                f"Open: {summary.get('open_positions', 0)}\n"
-                f"Win Rate: {summary.get('win_rate', 0):.1f}%\n"
-                f"Drawdown: {summary.get('max_drawdown', 0):.1f}%\n"
+                f"Initial: ${initial_balance:.2f}\n"
+                f"Equity: ${total_equity:.2f}\n"
+                f"Closed PnL: ${total_pnl:.2f}\n"
+                f"Floating PnL: ${floating_pnl:.2f}\n"
+                f"Trades: {total_trades}\n"
+                f"Open: {open_positions}\n"
+                f"Win Rate: {win_rate:.1f}%\n"
+                f"Drawdown: {max_drawdown:.1f}%\n"
             )
             
+            # Детали открытых позиций
             positions_msg = ""
-            if 'open_positions_details' in summary and summary['open_positions_details']:
+            open_positions_details = summary.get('open_positions_details', [])
+            if open_positions_details:
                 positions_msg = "\n\n🎯 <b>OPEN POSITIONS:</b>\n"
-                for pos in summary['open_positions_details']:
-                    entry_z = pos['entry_z']
-                    current_z = pos['current_z']
+                for pos in open_positions_details:
+                    entry_z = self.safe_format_number(pos.get('entry_z', 0), precision=2)
+                    current_z = self.safe_format_number(pos.get('current_z'), precision=2)
+                    floating_pnl_val = self.safe_format_number(pos.get('floating_pnl', 0), precision=2)
+                    size = self.safe_format_number(pos.get('size', 0), precision=2)
+                    duration = pos.get('duration_minutes', 0)
+                    pair_name = pos.get('pair', 'UNKNOWN')
+                    signal = pos.get('signal', 'N/A')
                     
+                    # Определяем тренд и иконку
                     if current_z is not None:
                         if abs(current_z) < abs(entry_z):
                             trend = "📉 к выходу"
@@ -184,19 +212,20 @@ class TelegramObserver(Observer):
                         z_change = 0
                     
                     positions_msg += (
-                        f"{trend_arrow} <b>{pos['pair']}</b>\n"
-                        f"   Signal: {pos['signal']}\n"
+                        f"{trend_arrow} <b>{pair_name}</b>\n"
+                        f"   Signal: {signal}\n"
                         f"   Entry Z: {entry_z:.2f}\n"
                         f"   Current Z: {current_z:.2f if current_z is not None else 'N/A'}\n"
                         f"   Change: {z_change:+.2f} {trend}\n"
-                        f"   PnL: ${pos['floating_pnl']:+.2f}\n"
-                        f"   Size: ${pos['size']:.2f}\n"
-                        f"   Duration: {pos['duration_minutes']} min\n"
+                        f"   PnL: ${floating_pnl_val:+.2f}\n"
+                        f"   Size: ${size:.2f}\n"
+                        f"   Duration: {duration} min\n"
                         f"   ───────────────────\n"
                     )
             else:
                 positions_msg = "\n\n📋 <b>No open positions</b>"
             
+            # Легенда для понимания сигналов
             legend_msg = (
                 "\n\n📊 <b>LEGEND:</b>\n"
                 "🟢 Z-score → 0 (хорошо)\n"
@@ -204,6 +233,7 @@ class TelegramObserver(Observer):
                 "🎯 Вход: |Z| > 1.0, Выход: |Z| < 0.5"
             )
             
+            # Кнопки управления
             buttons = [
                 [
                     {'text': '📊 Summary', 'callback_data': 'SUMMARY'},
@@ -224,19 +254,53 @@ class TelegramObserver(Observer):
             return False
 
     def handle_management_callback(self, callback_data, trader, current_data=None):
-        if callback_data == 'SUMMARY':
-            self.send_detailed_status(trader, current_data)
-        elif callback_data == 'CLOSE_ALL':
-            closed_count = trader.close_all_positions()
-            self.send_message(f"✅ Closed {closed_count} positions")
-        elif callback_data == 'ENABLE_AUTO':
-            trader.enable_trading()
-            self.send_message("✅ Auto trading ENABLED")
-        elif callback_data == 'DISABLE_AUTO':
-            trader.disable_trading()
-            self.send_message("🚫 Auto trading DISABLED")
-        elif callback_data == 'EXPORT_LOG':
-            if trader.export_trading_log():
-                self.send_message("✅ Trading log exported")
-            else:
-                self.send_message("❌ Failed to export log")
+        """Обработка callback'ов управления из Telegram"""
+        try:
+            if callback_data == 'SUMMARY':
+                self.send_detailed_status(trader, current_data)
+                
+            elif callback_data == 'CLOSE_ALL':
+                if trader:
+                    closed_count = trader.close_all_positions()
+                    self.send_message(f"✅ Closed {closed_count} positions")
+                else:
+                    self.send_message("❌ Trader not available")
+                    
+            elif callback_data == 'ENABLE_AUTO':
+                if trader:
+                    trader.enable_trading()
+                    self.send_message("✅ Auto trading ENABLED")
+                else:
+                    self.send_message("❌ Trader not available")
+                    
+            elif callback_data == 'DISABLE_AUTO':
+                if trader:
+                    trader.disable_trading()
+                    self.send_message("🚫 Auto trading DISABLED")
+                else:
+                    self.send_message("❌ Trader not available")
+                    
+            elif callback_data == 'EXPORT_LOG':
+                if trader and trader.export_trading_log():
+                    self.send_message("✅ Trading log exported")
+                else:
+                    self.send_message("❌ Failed to export log")
+                    
+        except Exception as e:
+            error_msg = f"❌ Error handling callback {callback_data}: {e}"
+            print(error_msg)
+            self.send_message(error_msg)
+
+    def send_simple_message(self, text):
+        """Простая отправка текстового сообщения"""
+        return self.send_message(text)
+
+    def get_bot_info(self):
+        """Получение информации о боте"""
+        url = f"https://api.telegram.org/bot{self.token}/getMe"
+        try:
+            response = requests.get(url, timeout=10)
+            return response.json()
+        except Exception as e:
+            print(f"❌ Error getting bot info: {e}")
+            return None
